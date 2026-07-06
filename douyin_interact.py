@@ -44,6 +44,8 @@ try:
 except ImportError:
     PERSONAS = [{"name": "默认用户", "tone": "", "trait": "", "style": "", "messages": []}]
 
+from humanized_input import type_humanized, DEFAULT_TYPING_STYLE  # M3 拟人输入
+
 
 # ══════════════════════════════════════════════
 #  配置加载
@@ -250,23 +252,8 @@ def run(config: dict, headless: bool = False):
                     time.sleep(0.2)
                     el.evaluate("el2 => { el2.textContent = ''; el2.innerHTML = ''; el2.focus(); }")
                     time.sleep(0.1)
-                    # 逐字注入：通过 evaluate 传参，避免字符串拼接导致的转义/注入问题
-                    for ch in reply:
-                        el.evaluate(
-                            """(el2, ch) => {
-                                const sel = window.getSelection();
-                                const range = sel.getRangeAt(0);
-                                range.deleteContents();
-                                const tn = document.createTextNode(ch);
-                                range.insertNode(tn);
-                                range.setStartAfter(tn);
-                                sel.removeAllRanges();
-                                sel.addRange(range);
-                                el2.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:ch}));
-                            }""",
-                            ch,
-                        )
-                        time.sleep(0.01)
+                    # M3 拟人输入：jieba 分词 + 词间随机 + 标点长停
+                    type_humanized(el, reply, typing_style=DEFAULT_TYPING_STYLE)
                     time.sleep(0.3)
                     page.evaluate("""() => {
                         ['keydown','keypress','keyup'].forEach(type => {
