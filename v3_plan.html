@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>析命师 v3.0 拓展方案 · 人格化智能体</title>
+<style>
+  :root{
+    --primary:#6366f1; --secondary:#8b5cf6; --accent:#06b6d4;
+    --success:#10b981; --warning:#f59e0b; --danger:#ef4444;
+    --bg:#f1f5f9; --card:#ffffff; --text:#1e293b; --muted:#64748b;
+    --border:#e2e8f0; --code-bg:#0f172a; --code-text:#e2e8f0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,"Microsoft YaHei","Segoe UI",sans-serif;
+    background:var(--bg); color:var(--text); line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+  }
+  .container{max-width:1120px;margin:0 auto;padding:0 24px 80px}
+
+  /* 封面 */
+  .hero{
+    background:linear-gradient(135deg,#6366f1 0%,#8b5cf6 50%,#06b6d4 100%);
+    color:#fff;padding:64px 24px 56px;text-align:center;position:relative;overflow:hidden;
+  }
+  .hero::after{
+    content:"";position:absolute;inset:0;
+    background-image:radial-gradient(circle at 20% 30%,rgba(255,255,255,.15) 0,transparent 40%),
+                     radial-gradient(circle at 80% 70%,rgba(255,255,255,.1) 0,transparent 40%);
+  }
+  .hero-content{position:relative;z-index:1;max-width:900px;margin:0 auto}
+  .hero .ver{display:inline-block;background:rgba(255,255,255,.2);padding:4px 14px;border-radius:20px;font-size:13px;letter-spacing:1px;margin-bottom:18px}
+  .hero h1{font-size:40px;font-weight:800;margin-bottom:14px;letter-spacing:-.5px}
+  .hero .sub{font-size:18px;opacity:.92;font-weight:300}
+  .hero .meta{margin-top:24px;font-size:13px;opacity:.8;display:flex;gap:24px;justify-content:center;flex-wrap:wrap}
+
+  /* 章节 */
+  section{margin-top:56px;scroll-margin-top:20px}
+  .sec-head{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+  .sec-num{
+    width:36px;height:36px;border-radius:10px;flex-shrink:0;
+    background:linear-gradient(135deg,var(--primary),var(--secondary));
+    color:#fff;display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:15px;
+  }
+  .sec-head h2{font-size:24px;font-weight:700;color:var(--text)}
+  .sec-head .tag{margin-left:auto;font-size:12px;color:var(--muted);background:#fff;border:1px solid var(--border);padding:4px 10px;border-radius:6px}
+
+  /* 卡片 */
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .card h3{font-size:17px;margin-bottom:12px;color:var(--primary);display:flex;align-items:center;gap:8px}
+  .card p{margin-bottom:10px;color:var(--text)}
+  .card p:last-child{margin-bottom:0}
+
+  /* 表格 */
+  table{width:100%;border-collapse:collapse;font-size:14px;margin:12px 0}
+  th{background:#f8fafc;text-align:left;padding:12px 14px;font-weight:600;color:var(--text);border-bottom:2px solid var(--border);white-space:nowrap}
+  td{padding:11px 14px;border-bottom:1px solid var(--border);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:#fafbfc}
+
+  /* 徽章 */
+  .badge{display:inline-block;padding:2px 9px;border-radius:5px;font-size:12px;font-weight:600}
+  .b-blue{background:#e0e7ff;color:#4338ca}
+  .b-green{background:#d1fae5;color:#065f46}
+  .b-orange{background:#fef3c7;color:#92400e}
+  .b-red{background:#fee2e2;color:#991b1b}
+  .b-gray{background:#f1f5f9;color:#475569}
+  .b-purple{background:#ede9fe;color:#5b21b6}
+
+  /* 架构图通用 */
+  .arch{background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:24px;margin:14px 0}
+  .layer{
+    background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px 20px;
+    margin-bottom:0;position:relative;border-left:4px solid var(--primary);
+  }
+  .layer.perceive{border-left-color:var(--accent)}
+  .layer.think{border-left-color:var(--secondary)}
+  .layer.express{border-left-color:var(--success)}
+  .layer-title{font-weight:700;font-size:15px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+  .layer-desc{font-size:13px;color:var(--muted)}
+  .arrow-down{text-align:center;font-size:22px;color:var(--muted);line-height:1;margin:6px 0}
+
+  /* 三层并排节点 */
+  .nodes{display:flex;gap:12px;flex-wrap:wrap;margin-top:10px}
+  .node{flex:1;min-width:160px;background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:12px;font-size:13px}
+  .node b{display:block;color:var(--primary);margin-bottom:4px}
+
+  /* 降级流程 */
+  .fallback{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0;font-size:13px}
+  .fb-node{background:#fff;border:1px solid var(--border);border-radius:8px;padding:8px 14px}
+  .fb-node.ok{border-color:var(--success);color:#065f46}
+  .fb-node.warn{border-color:var(--warning);color:#92400e}
+  .fb-node.fallback{border-color:var(--muted);color:var(--muted);background:#f8fafc}
+  .fb-arrow{color:var(--muted)}
+
+  /* 人群卡片网格 */
+  .crowd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin:14px 0}
+  .crowd-card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px;border-top:3px solid var(--secondary)}
+  .crowd-card .name{font-weight:700;font-size:15px;margin-bottom:4px}
+  .crowd-card .feat{font-size:12px;color:var(--muted);margin-bottom:8px}
+  .rel{font-size:11px;padding:2px 8px;border-radius:4px;display:inline-block}
+  .rel.top{background:#fee2e2;color:#991b1b}
+  .rel.high{background:#fef3c7;color:#92400e}
+  .rel.mid{background:#e0e7ff;color:#4338ca}
+
+  /* 维度 schema */
+  .schema{
+    background:var(--code-bg);color:var(--code-text);border-radius:10px;
+    padding:18px 20px;font-family:"Cascadia Code",Consolas,monospace;font-size:13px;
+    line-height:1.6;overflow-x:auto;margin:12px 0;
+  }
+  .schema .k{color:#f472b6}
+  .schema .s{color:#86efac}
+  .schema .c{color:#64748b}
+
+  /* 时间线 */
+  .timeline{position:relative;margin:20px 0;padding-left:8px}
+  .tl-item{display:flex;gap:18px;margin-bottom:18px;align-items:stretch}
+  .tl-marker{display:flex;flex-direction:column;align-items:center;flex-shrink:0}
+  .tl-dot{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0}
+  .tl-dot.risk{background:linear-gradient(135deg,var(--warning),var(--danger))}
+  .tl-line{width:2px;background:var(--border);flex:1;margin-top:4px}
+  .tl-body{flex:1;padding-bottom:8px}
+  .tl-title{font-weight:700;font-size:15px;margin-bottom:4px}
+  .tl-title .risk-tag{font-size:11px;background:#fee2e2;color:#991b1b;padding:1px 7px;border-radius:4px;margin-left:8px;vertical-align:middle}
+  .tl-desc{font-size:13px;color:var(--muted);margin-bottom:6px}
+  .tl-out{font-size:12px;background:#f0fdf4;color:#065f46;padding:4px 10px;border-radius:6px;display:inline-block;border:1px solid #bbf7d0}
+
+  /* 决策卡片 */
+  .decision-card{border-left:4px solid var(--warning);background:#fffbeb}
+  .decision-card h3{color:#92400e}
+  .opt{display:flex;gap:10px;align-items:flex-start;margin:8px 0;padding:10px;background:#fff;border-radius:8px;border:1px solid var(--border)}
+  .opt .pick{flex-shrink:0;font-weight:700;color:var(--success);font-size:13px;min-width:48px}
+  .opt .pick.no{color:var(--muted)}
+  .opt .txt{font-size:13px}
+  .opt .txt b{color:var(--text)}
+
+  /* 采集架构 */
+  .ingest-flow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:14px 0}
+  .ingest-in{background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center}
+  .ingest-in .icon{font-size:28px;margin-bottom:6px}
+  .ingest-in .title{font-weight:700;font-size:14px;margin-bottom:4px}
+  .ingest-in .desc{font-size:12px;color:var(--muted)}
+  .merge-box{background:linear-gradient(135deg,#e0e7ff,#ede9fe);border:1px solid #c7d2fe;border-radius:10px;padding:14px;text-align:center;margin:12px 0;font-weight:600;color:#4338ca}
+
+  /* 需求条目 */
+  .req{display:flex;gap:16px;margin-bottom:14px;align-items:flex-start}
+  .req-num{width:32px;height:32px;border-radius:8px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;font-size:14px}
+  .req-body{flex:1}
+  .req-body h4{font-size:15px;margin-bottom:4px}
+  .req-body .detail{font-size:13px;color:var(--muted)}
+
+  code.inline{background:#f1f5f9;padding:1px 6px;border-radius:4px;font-family:Consolas,monospace;font-size:12px;color:#4338ca}
+
+  .note{background:#eff6ff;border-left:3px solid var(--primary);padding:12px 16px;border-radius:0 8px 8px 0;font-size:13px;margin:12px 0}
+  .note.warn{background:#fffbeb;border-left-color:var(--warning)}
+  .note.danger{background:#fef2f2;border-left-color:var(--danger)}
+
+  .toc{background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px 24px;margin-top:24px}
+  .toc h3{font-size:14px;color:var(--muted);margin-bottom:12px;text-transform:uppercase;letter-spacing:1px}
+  .toc ol{padding-left:20px;columns:2;font-size:14px}
+  .toc li{margin-bottom:6px;break-inside:avoid}
+  .toc a{color:var(--primary);text-decoration:none}
+  .toc a:hover{text-decoration:underline}
+
+  footer{text-align:center;padding:32px 24px;color:var(--muted);font-size:13px;border-top:1px solid var(--border);margin-top:40px}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-content">
+    <div class="ver">v3.0 规划稿 · 2026-07-05</div>
+    <h1>析命师互动控制台 · 拓展方案</h1>
+    <div class="sub">从静态知识库到人格化智能体 — 全品类抖音直播互动系统</div>
+    <div class="meta">
+      <span>📐 架构升级</span>
+      <span>🎧 听觉感知</span>
+      <span>🧠 人格思维</span>
+      <span>✍️ 拟人表达</span>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="toc">
+    <h3>目录</h3>
+    <ol>
+      <li><a href="#summary">执行摘要</a></li>
+      <li><a href="#history">现状与历史教训</a></li>
+      <li><a href="#principle">核心设计原则</a></li>
+      <li><a href="#arch">目标架构</a></li>
+      <li><a href="#persona">人格化设计</a></li>
+      <li><a href="#ingest">产品知识采集</a></li>
+      <li><a href="#reqs">五大需求落地</a></li>
+      <li><a href="#roadmap">实施路线</a></li>
+      <li><a href="#risk">风险与对策</a></li>
+      <li><a href="#decision">关键决策点</a></li>
+    </ol>
+  </div>
+
+  <!-- 一、执行摘要 -->
+  <section id="summary">
+    <div class="sec-head">
+      <div class="sec-num">01</div>
+      <h2>执行摘要</h2>
+    </div>
+    <div class="card">
+      <p>v3.0 将本工具从「<b>静态知识库 + 定时发送</b>」升级为「<b>听觉 + 人格思维 + 自主决策 + 拟人输入</b>」的<b>人格化智能体</b>,并从单一品类(龙虎山招财钱母)扩展为<b>全品类可插拔</b>架构。</p>
+      <p>四大核心升级:</p>
+      <div class="nodes">
+        <div class="node"><b>🧬 立体人格</b>八大人群 × 六生活维度组合,告别固定弹幕模板</div>
+        <div class="node"><b>🤖 LLM 驱动</b>根据人格 + 主播语境实时思考,自然随机变化</div>
+        <div class="node"><b>🎧 双模听觉</b>实时听主播 + 离线录播学产品,共享音频捕获底座</div>
+        <div class="node"><b>📚 多源采集</b>文本/录音/读图归一到文本,统一提取品类知识包</div>
+      </div>
+      <div class="note"><b>设计哲学:</b>分层降级,永不罢工。LLM 失败降级知识库,ASR 不可用降级定时,决策不回则静默——任何一层挂掉,系统自动回退到下一层可用模式。</div>
+    </div>
+  </section>
+
+  <!-- 二、现状与历史教训 -->
+  <section id="history">
+    <div class="sec-head">
+      <div class="sec-num">02</div>
+      <h2>现状与历史教训</h2>
+      <span class="tag">v0.x → v2.x → v3.0</span>
+    </div>
+    <div class="card">
+      <h3>📊 版本演进</h3>
+      <table>
+        <thead>
+          <tr><th>版本</th><th>架构</th><th>状态</th><th>关键问题</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="badge b-red">v0.x</span></td>
+            <td>火山 ASR + DeepSeek/Ollama LLM</td>
+            <td><span class="badge b-red">已废弃</span></td>
+            <td>代码删除,但配置 schema 保留在 <code class="inline">.env.example</code></td>
+          </tr>
+          <tr>
+            <td><span class="badge b-green">v2.x</span></td>
+            <td>静态知识库 + 定时发送(±30% 抖动)</td>
+            <td><span class="badge b-green">当前在用</span></td>
+            <td>稳定但无感知,弹幕固定易被识别</td>
+          </tr>
+          <tr>
+            <td><span class="badge b-purple">v3.0</span></td>
+            <td>听觉 + 人格思维 + 决策 + 拟人输入</td>
+            <td><span class="badge b-blue">本方案</span></td>
+            <td>分阶段、可降级,规避 v0.x 教训</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h3>⚠️ v0.x 废弃原因(推断)与本次规避</h3>
+      <table>
+        <thead><tr><th>v0.x 翻车点</th><th>本次对策</th></tr></thead>
+        <tbody>
+          <tr><td>实时流式 ASR 不稳定/延迟高</td><td>先做<b>离线录音 ASR</b>(简单可重试),实时听觉后置且可降级</td></tr>
+          <tr><td>LLM 生成弹幕不可控、易跑题</td><td>加<b>决策层</b> + <b>知识库约束</b> + 失败降级到静态话术</td></tr>
+          <tr><td>链路太重,一损俱损</td><td><b>分层降级</b>,每层失败回退下一层,永不罢工</td></tr>
+          <tr><td>单一品类写死</td><td>产品知识改为<b>冷启动动态生成的可插拔品类包</b></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 三、核心设计原则 -->
+  <section id="principle">
+    <div class="sec-head">
+      <div class="sec-num">03</div>
+      <h2>核心设计原则:分层降级</h2>
+    </div>
+    <div class="card">
+      <p>整个 v3.0 的可靠性基石。任意环节异常,自动滑落到下一层可用模式,保证直播间永不「死寂」。</p>
+      <div class="arch">
+        <div class="fallback">
+          <span class="fb-node ok">🧠 LLM 正常 → 生成人格化弹幕</span>
+          <span class="fb-arrow">─ 失败/超时 →</span>
+          <span class="fb-node fallback">📚 降级:知识库兜底话术</span>
+        </div>
+        <div class="fallback">
+          <span class="fb-node ok">🎧 ASR 正常 → 实时听主播</span>
+          <span class="fb-arrow">─ 不可用 →</span>
+          <span class="fb-node fallback">⏰ 降级:定时发送(v2 模式)</span>
+        </div>
+        <div class="fallback">
+          <span class="fb-node ok">🤔 决策层:该不该回?</span>
+          <span class="fb-arrow">─ 决策不回 →</span>
+          <span class="fb-node fallback">🤫 静默(本就不该回)</span>
+        </div>
+        <div class="fallback">
+          <span class="fb-node ok">✍️ 拟人输入</span>
+          <span class="fb-arrow">─ 输入框丢失 →</span>
+          <span class="fb-node fallback">📸 截图留证 + 重试(沿用 v2)</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 四、目标架构 -->
+  <section id="arch">
+    <div class="sec-head">
+      <div class="sec-num">04</div>
+      <h2>目标架构</h2>
+      <span class="tag">感知 → 思维 → 表达</span>
+    </div>
+    <div class="card">
+      <h3>三层架构</h3>
+      <div class="arch">
+        <div class="layer perceive">
+          <div class="layer-title">🎧 感知层 · Perceive</div>
+          <div class="layer-desc">直播间音频流 → ASR → 主播话语流(event stream)</div>
+          <div class="nodes">
+            <div class="node"><b>页面音频捕获</b>Web Audio API 抓 &lt;video&gt; 音频流(技术底座,录音/实时共享)</div>
+            <div class="node"><b>实时听觉</b>流式 ASR → 主播话语事件</div>
+            <div class="node"><b>离线学习</b>录音存文件 → 批量 ASR → 产品知识</div>
+          </div>
+        </div>
+        <div class="arrow-down">▼</div>
+        <div class="layer think">
+          <div class="layer-title">🧠 思维层 · Think(人格大脑)</div>
+          <div class="layer-desc">输入:主播说了什么 + 人格设定 + 知识库关键信息 → 输出:{回应?, 内容?, 情绪?}</div>
+          <div class="nodes">
+            <div class="node"><b>人格设定</b>八大人群 × 六维度立体画像</div>
+            <div class="node"><b>LLM 决策</b>自己决定回不回、回什么、什么语气</div>
+            <div class="node"><b>知识约束</b>品类知识包 + 兜底话术,防跑题</div>
+          </div>
+        </div>
+        <div class="arrow-down">▼ 仅当「回应?=是」</div>
+        <div class="layer express">
+          <div class="layer-title">✍️ 表达层 · Express(拟人输入)</div>
+          <div class="layer-desc">字/词分块 → 块间随机停顿 → 偶尔停顿像在想 → Enter</div>
+          <div class="nodes">
+            <div class="node"><b>分词</b>jieba 切词块</div>
+            <div class="node"><b>节奏</b>块间 50~200ms 随机,句中偶尔长停顿</div>
+            <div class="node"><b>风格</b>服从人格 typing_style(快/慢/标点/emoji)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>🔁 运行时主循环</h3>
+      <div class="arch">
+        <svg viewBox="0 0 820 320" style="width:100%;max-width:820px;margin:0 auto;display:block">
+          <defs>
+            <marker id="arr" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L9,3 z" fill="#94a3b8"/>
+            </marker>
+          </defs>
+          <!-- 节点 -->
+          <rect x="20" y="20" width="160" height="56" rx="10" fill="#ecfeff" stroke="#06b6d4" stroke-width="1.5"/>
+          <text x="100" y="44" text-anchor="middle" font-size="13" font-weight="700" fill="#0e7490">🎙️ 主播说话</text>
+          <text x="100" y="62" text-anchor="middle" font-size="11" fill="#64748b">直播间音频流</text>
+
+          <rect x="220" y="20" width="160" height="56" rx="10" fill="#ecfeff" stroke="#06b6d4" stroke-width="1.5"/>
+          <text x="300" y="44" text-anchor="middle" font-size="13" font-weight="700" fill="#0e7490">🎧 ASR 转写</text>
+          <text x="300" y="62" text-anchor="middle" font-size="11" fill="#64748b">话语事件流</text>
+
+          <rect x="420" y="20" width="180" height="56" rx="10" fill="#ede9fe" stroke="#8b5cf6" stroke-width="1.5"/>
+          <text x="510" y="44" text-anchor="middle" font-size="13" font-weight="700" fill="#5b21b6">🧠 人格大脑(LLM)</text>
+          <text x="510" y="62" text-anchor="middle" font-size="11" fill="#64748b">人格+语境+知识库</text>
+
+          <!-- 决策菱形 -->
+          <polygon points="700,48 760,18 820,48 760,78" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+          <text x="760" y="52" text-anchor="middle" font-size="12" font-weight="700" fill="#92400e">回应?</text>
+
+          <!-- 不回 -->
+          <rect x="640" y="130" width="140" height="48" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+          <text x="710" y="159" text-anchor="middle" font-size="13" fill="#64748b">🤫 静默</text>
+
+          <!-- 回 -->
+          <rect x="420" y="130" width="180" height="48" rx="10" fill="#d1fae5" stroke="#10b981" stroke-width="1.5"/>
+          <text x="510" y="159" text-anchor="middle" font-size="13" font-weight="700" fill="#065f46">✍️ 拟人输入</text>
+
+          <rect x="220" y="130" width="160" height="48" rx="10" fill="#d1fae5" stroke="#10b981" stroke-width="1.5"/>
+          <text x="300" y="159" text-anchor="middle" font-size="13" font-weight="700" fill="#065f46">📤 发送弹幕</text>
+
+          <!-- 箭头 -->
+          <line x1="180" y1="48" x2="218" y2="48" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+          <line x1="380" y1="48" x2="418" y2="48" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+          <line x1="600" y1="48" x2="700" y2="48" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+          <line x1="760" y1="78" x2="710" y2="128" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+          <text x="745" y="108" font-size="11" fill="#ef4444">否</text>
+          <line x1="760" y1="78" x2="560" y2="128" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+          <text x="650" y="108" font-size="11" fill="#10b981">是</text>
+          <line x1="420" y1="154" x2="382" y2="154" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+
+          <!-- 节流回环 -->
+          <rect x="220" y="220" width="380" height="56" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1.5" stroke-dasharray="4 3"/>
+          <text x="410" y="244" text-anchor="middle" font-size="13" font-weight="700" fill="#475569">⏱️ 节流 & 防风控</text>
+          <text x="410" y="262" text-anchor="middle" font-size="11" fill="#64748b">角色冷却期 · 全局速率上限 · 随机抖动</text>
+          <line x1="300" y1="178" x2="300" y2="218" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+          <line x1="410" y1="220" x2="510" y2="178" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- 五、人格化设计 -->
+  <section id="persona">
+    <div class="sec-head">
+      <div class="sec-num">05</div>
+      <h2>人格化设计</h2>
+      <span class="tag">八大人群 × 六维度</span>
+    </div>
+
+    <div class="card">
+      <h3>🎯 八大人群(基础分类层)</h3>
+      <p>巨量引擎人群分层框架,作为人格的<b>第一层标签</b>。下表标注对本方案的全品类适用性(品类无关)。</p>
+      <div class="crowd-grid">
+        <div class="crowd-card"><div class="name">Z 世代</div><div class="feat">18-24,玩梗冲动消费,短句emoji</div><span class="rel mid">边缘人群</span></div>
+        <div class="crowd-card"><div class="name">小镇青年</div><div class="feat">25-35 三四线,跟风讲性价比</div><span class="rel mid">边缘人群</span></div>
+        <div class="crowd-card"><div class="name">精致妈妈</div><div class="feat">25-40 一二线宝妈,关注家庭</div><span class="rel high">高价值</span></div>
+        <div class="crowd-card"><div class="name">都市蓝领</div><div class="feat">25-45 城市打工族,务实讲实惠</div><span class="rel high">高价值</span></div>
+        <div class="crowd-card"><div class="name">都市白领</div><div class="feat">25-35 一二线女,精致理性</div><span class="rel mid">边缘人群</span></div>
+        <div class="crowd-card"><div class="name">都市中产</div><div class="feat">30-45 高收入,得体看品质</div><span class="rel high">高价值</span></div>
+        <div class="crowd-card"><div class="name">都市银发族</div><div class="feat">55+ 城市老年,信祈福粘性高</div><span class="rel high">高价值</span></div>
+        <div class="crowd-card"><div class="name">小镇中老年</div><div class="feat">45+ 下沉,最信价格敏感</div><span class="rel top">核心客群</span></div>
+      </div>
+      <div class="note">八大人群是<b>品类无关</b>的通用框架,任何品类都可用同一套人群标签;具体到某个品类,哪些人群是「核心客群」由该品类的消费属性决定,可在配置中标注优先级。</div>
+    </div>
+
+    <div class="card">
+      <h3>🧬 六维度驱动(立体人格)</h3>
+      <p>八大人群只是基础层。真正的<b>语气和回话方式</b>,由一组「生活状态维度」组合决定——同样「小镇中老年」,用 800 元机还是 2000 元机、在江西还是在东北、丧偶还是已婚有娃,语气完全不同。这让 LLM 天然获得「随机变化」的素材。</p>
+      <table>
+        <thead><tr><th>维度</th><th>字段</th><th>影响</th></tr></thead>
+        <tbody>
+          <tr><td>👥 人群</td><td><code class="inline">crowd</code></td><td>八大人群之一,基础画像</td></tr>
+          <tr><td>📱 手机</td><td><code class="inline">device</code></td><td>消费力侧面,影响打字速度/精致度</td></tr>
+          <tr><td>🚗 车</td><td><code class="inline">vehicle</code></td><td>身份信号,影响自我认同与话术</td></tr>
+          <tr><td>🛒 购物频次</td><td><code class="inline">purchase_freq</code></td><td>直播购物熟练度,影响提问方式</td></tr>
+          <tr><td>📍 省份</td><td><code class="inline">region</code></td><td>地域文化语气 + 对该品类的接受度基线</td></tr>
+          <tr><td>💍 婚姻</td><td><code class="inline">marriage</code></td><td>家庭责任视角,影响关注点(家宅/孩子/个人)</td></tr>
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:20px">📐 人格 Schema</h3>
+      <div class="schema">
+<span class="c">// rules.json — 维度驱动的人格定义</span>
+{
+  "做生意的老张": {
+    <span class="k">"crowd"</span>: <span class="s">"都市蓝领"</span>,          <span class="c">// 八大人群</span>
+    <span class="k">"device"</span>: <span class="s">"1500元安卓"</span>,        <span class="c">// 手机价格档</span>
+    <span class="k">"vehicle"</span>: <span class="s">"电动车"</span>,           <span class="c">// 车(无车/10万国产/30万BBA)</span>
+    <span class="k">"purchase_freq"</span>: <span class="s">"中"</span>,       <span class="c">// 高/中/低</span>
+    <span class="k">"region"</span>: <span class="s">"河南"</span>,              <span class="c">// 所在省份</span>
+    <span class="k">"marriage"</span>: <span class="s">"已婚有娃"</span>,         <span class="c">// 未婚/已婚无娃/已婚有娃/离异/丧偶</span>
+    <span class="k">"tone"</span>: <span class="s">"直白务实、讲实惠"</span>,      <span class="c">// 软画像(可手填,留空则LLM推导)</span>
+    <span class="k">"language_style"</span>: <span class="s">"短句少标点、爱问真有用吗"</span>,
+    <span class="k">"response_tendency"</span>: <span class="s">0.45</span>,   <span class="c">// 回应倾向 0~1</span>
+    <span class="k">"typing_style"</span>: <span class="s">"slow"</span>,        <span class="c">// 打字习惯</span>
+    <span class="k">"messages"</span>: [<span class="s">"真有用吗"</span>, <span class="s">"便宜点不"</span>]  <span class="c">// 兜底话术</span>
+  }
+}
+      </div>
+      <div class="note"><b>软画像策略:</b><code class="inline">tone</code> / <code class="inline">language_style</code> 可手填(精细控制),也可留空让 LLM 据上面 6 个硬维度自行推导——手填优先,留空则推导。</div>
+    </div>
+
+    <div class="card">
+      <h3>🔀 维度组合 → 语气差异(示意)</h3>
+      <table>
+        <thead><tr><th>维度组合</th><th>tone</th><th>回话方式</th></tr></thead>
+        <tbody>
+          <tr><td>小镇中老年 + 800元机 + 无车 + 江西 + 丧偶</td><td>朴实、信、孤独求安慰</td><td>"管用吗""多少钱""给我留一个"</td></tr>
+          <tr><td>都市中产 + 8000元iPhone + 30万BBA + 已婚有娃 + 上海</td><td>得体、理性、讲品质</td><td>"材质怎么样""有证书吗""给孩子请一个"</td></tr>
+          <tr><td>Gen Z + 5000元机 + 无车 + 未婚 + 广东</td><td>玩梗、好奇、冲动</td><td>"冲了""这波能转运吗哈哈""码住"</td></tr>
+          <tr><td>都市蓝领 + 1500元机 + 电动车 + 已婚 + 河南</td><td>直白、讲实惠</td><td>"真有用吗""便宜点不""我试试"</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 六、产品知识采集 -->
+  <section id="ingest">
+    <div class="sec-head">
+      <div class="sec-num">06</div>
+      <h2>产品知识采集(冷启动)</h2>
+      <span class="tag">全品类 · 多源归一</span>
+    </div>
+
+    <div class="card">
+      <h3>📦 多源输入,文本归一</h3>
+      <p>给客户的工具是<b>全品类</b>的。客户拿到手面对新品类,系统通过采集主播/客户提供的产品素材,<b>最快学会产品知识</b>。所有输入最终归一到文本,走统一 LLM 提取器,产出「品类知识包」。</p>
+      <div class="ingest-flow">
+        <div class="ingest-in">
+          <div class="icon">📄</div>
+          <div class="title">文本输入</div>
+          <div class="desc">.txt/.md/.docx 导入或粘贴<br>产品文档/话术稿</div>
+        </div>
+        <div class="ingest-in">
+          <div class="icon">🎙️</div>
+          <div class="title">录音输入</div>
+          <div class="desc">直播录音 → ASR 转文本<br>主播讲解,最鲜活</div>
+        </div>
+        <div class="ingest-in">
+          <div class="icon">🖼️</div>
+          <div class="title">图片输入</div>
+          <div class="desc">主图/详情页 → 视觉LLM读图<br>提取卖点+结构</div>
+        </div>
+      </div>
+      <div class="merge-box">⬇️ 全部归一为带来源标记的文本块</div>
+      <div class="merge-box" style="background:linear-gradient(135deg,#d1fae5,#a7f3d0);border-color:#6ee7b7;color:#065f46">🧠 统一 LLM 提取器 → 品类知识包(JSON + 可读 MD)</div>
+    </div>
+
+    <div class="card">
+      <h3>🖼️ 读图方案(视觉 LLM 优先)</h3>
+      <p>产品图(电商主图/详情页)排版复杂:大标题、卖点气泡、价格角标、对比表格。<b>不要走纯 OCR</b>——出来是乱序文字堆,分不清哪是标题哪是卖点。</p>
+      <table>
+        <thead><tr><th>方案</th><th>能力</th><th>适用</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="badge b-green">视觉 LLM(主)</span></td>
+            <td>看懂图意+排版+表格,直接结构化输出</td>
+            <td>产品主图、详情页、含图表的图</td>
+          </tr>
+          <tr>
+            <td><span class="badge b-gray">OCR(fallback)</span></td>
+            <td>只提文字,丢结构</td>
+            <td>纯文字图、无网络/省钱</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="schema">
+<span class="c">// 视觉 LLM 一步到位:看图 + 结构化提取</span>
+<span class="c">// 输入:一张产品主图</span>
+<span class="c">// 输出:</span>
+{
+  <span class="k">"产品名"</span>: <span class="s">"xxx"</span>,
+  <span class="k">"主标题"</span>: <span class="s">"xxx"</span>,
+  <span class="k">"卖点"</span>: [<span class="s">"限量"</span>, <span class="s">"手绘"</span>, <span class="s">"防伪印"</span>],
+  <span class="k">"价格"</span>: <span class="s">"199"</span>,
+  <span class="k">"现货"</span>: <span class="s">true</span>
+}
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>🔀 与现有弹幕采集的职责区分</h3>
+      <table>
+        <thead><tr><th>模块</th><th>采集对象</th><th>学到什么</th><th>喂给</th></tr></thead>
+        <tbody>
+          <tr><td><code class="inline">record_content.py</code><br>(已有)</td><td>观众弹幕</td><td>消费者怎么说话/问什么</td><td>语言风格参考</td></tr>
+          <tr><td><code class="inline">knowledge_ingest</code><br>(新增)</td><td>产品知识(文本/录音/图)</td><td>产品是什么</td><td>事实约束(别讲错产品)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>🚀 客户冷启动标准流程</h3>
+      <div class="arch">
+        <div class="fallback">
+          <span class="fb-node ok">1️⃣ 提供 1~2 场直播录音 / 文档 / 产品图</span>
+          <span class="fb-arrow">→</span>
+          <span class="fb-node ok">2️⃣ 工具转写 + LLM 提取</span>
+          <span class="fb-arrow">→</span>
+          <span class="fb-node ok">3️⃣ 生成品类知识包</span>
+          <span class="fb-arrow">→</span>
+          <span class="fb-node ok">4️⃣ 客户 review 微调</span>
+          <span class="fb-arrow">→</span>
+          <span class="fb-node ok">5️⃣ 配置人格</span>
+          <span class="fb-arrow">→</span>
+          <span class="fb-node ok">6️⃣ 上线(听觉可选)</span>
+        </div>
+      </div>
+      <div class="note"><b>「最快」的诚实说明:</b>录音是<b>性价比最高</b>(知识最鲜活),不是<b>绝对最快</b>。若客户有现成文档,直接导入分钟级上线;录音作为补充丰富。多源学习按客户手头素材选。</div>
+    </div>
+  </section>
+
+  <!-- 七、五大需求落地 -->
+  <section id="reqs">
+    <div class="sec-head">
+      <div class="sec-num">07</div>
+      <h2>五大需求落地</h2>
+    </div>
+    <div class="card">
+      <div class="req">
+        <div class="req-num">1</div>
+        <div class="req-body">
+          <h4>人格定义(不只是编辑弹幕)</h4>
+          <div class="detail"><code class="inline">rules.json</code> schema 升级:八大人群 × 六维度立体画像;<code class="inline">messages</code> 从「发送源」降级为「兜底话术 + 风格样本」;知识库关键信息独立成块供 LLM 引用。GUI「角色弹幕」标签页升级为「人格管理」表单。<b>改造点:<code class="inline">llm_engine.py</code></b></div>
+        </div>
+      </div>
+      <div class="req">
+        <div class="req-num">2</div>
+        <div class="req-body">
+          <h4>LLM 根据人格随机生成</h4>
+          <div class="detail">新增 <code class="inline">generate_message(persona, host_said, knowledge)</code>;Prompt = 人格小传 + 主播原话 + 知识库要点 + JSON 输出约束;温度 0.8~1.0 保证变化性;要求 LLM 自己决定回不回(<code class="inline">respond: bool</code>);失败/超时(>5s)降级到 <code class="inline">messages</code> 兜底。</div>
+        </div>
+      </div>
+      <div class="req">
+        <div class="req-num">3</div>
+        <div class="req-body">
+          <h4>听觉(能听不一定回)</h4>
+          <div class="detail">Playwright 注入 JS,Web Audio API 抓 <code class="inline">&lt;video&gt;</code> 音频流 → 流式 ASR → 主播话语事件。<b>能听 ≠ 要回</b>:每条话语喂给人格大脑,由人格 <code class="inline">response_tendency</code> + 语境共同决定是否回应。ASR 不可用 → 降级 v2 定时模式。<b>关键风险点:页面音频捕获需先 PoC。</b></div>
+        </div>
+      </div>
+      <div class="req">
+        <div class="req-num">4</div>
+        <div class="req-body">
+          <h4>思维(扮演真用户)</h4>
+          <div class="detail">人格大脑统合需求 2/3:听 → 想 → 决策(回/不回)→ 回什么。节流:同角色冷却期内不重复回;全局速率上限防风控;决策不回则静默(本就不该回)。「真用户」的本质 = <b>有选择地回应</b>,而非每条必回。</div>
+        </div>
+      </div>
+      <div class="req">
+        <div class="req-num">5</div>
+        <div class="req-body">
+          <h4>拟人输入(字/词分块,不过快)</h4>
+          <div class="detail">替换当前 <code class="inline">type(text, delay=30)</code> 均匀输入:jieba 分词 → 词块序列 → 每块输入后随机停顿(50~200ms)→ 句中偶尔长停顿(0.5~1.5s 像在想)→ 速度服从人格 <code class="inline">typing_style</code> → 整体偏慢防风控。保留现有 React InputEvent 注入路径,只改节奏生成。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 八、实施路线 -->
+  <section id="roadmap">
+    <div class="sec-head">
+      <div class="sec-num">08</div>
+      <h2>实施路线</h2>
+      <span class="tag">M1 → M5 · 风险递增</span>
+    </div>
+    <div class="card">
+      <p>核心策略:<b>低风险先行,每阶段可独立交付价值</b>。即使后期高风险环节失败,前期成果仍可用。</p>
+      <div class="timeline">
+        <div class="tl-item">
+          <div class="tl-marker"><div class="tl-dot">M1</div><div class="tl-line"></div></div>
+          <div class="tl-body">
+            <div class="tl-title">人格化重构</div>
+            <div class="tl-desc">rules.json 维度 schema + <code class="inline">llm_engine</code> 接 LLM 生成 + 知识库约束 + 失败降级</div>
+            <span class="tl-out">✅ 产出:LLM 驱动的人格弹幕(无听觉,定时触发)</span>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-marker"><div class="tl-dot">M2</div><div class="tl-line"></div></div>
+          <div class="tl-body">
+            <div class="tl-title">冷启动知识采集</div>
+            <div class="tl-desc">knowledge_ingest 模块:文本/录音/读图 → 归一 → LLM 提取 → 品类知识包。给客户上手必需,且为 M4 验证音频捕获底座</div>
+            <span class="tl-out">✅ 产出:全品类冷启动能力 + 知识包</span>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-marker"><div class="tl-dot">M3</div><div class="tl-line"></div></div>
+          <div class="tl-body">
+            <div class="tl-title">拟人输入</div>
+            <div class="tl-desc">字/词分块 + 随机节奏 + typing_style,替换均匀 type()</div>
+            <span class="tl-out">✅ 产出:真人感打字</span>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-marker"><div class="tl-dot risk">M4</div><div class="tl-line"></div></div>
+          <div class="tl-body">
+            <div class="tl-title">实时听觉<span class="risk-tag">高风险 · v0.x 翻车点</span></div>
+            <div class="tl-desc">复用 M2 音频捕获底座,做流式 ASR + 主播话语事件。先 PoC 验证抖音页面音频可抓,不通过则搁置听觉</div>
+            <span class="tl-out" style="background:#fef3c7;color:#92400e;border-color:#fde68a">⚠️ 产出:实时听觉(可降级)</span>
+          </div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-marker"><div class="tl-dot">M5</div></div>
+          <div class="tl-body">
+            <div class="tl-title">决策融合 + 调优</div>
+            <div class="tl-desc">ASR 事件 → 人格大脑 → 决策 → 拟人输入,全链路联调 + 节流防封 + 人格多样性调优</div>
+            <span class="tl-out">✅ 产出:v3.0 完整版</span>
+          </div>
+        </div>
+      </div>
+      <div class="note"><b>M1+M2+M3 即使 M4 再次失败,仍是 v2.x 的有效升级</b>——这是对 v0.x 教训的核心回应:不再 all-in,分层可降级。</div>
+    </div>
+  </section>
+
+  <!-- 九、风险与对策 -->
+  <section id="risk">
+    <div class="sec-head">
+      <div class="sec-num">09</div>
+      <h2>风险与对策</h2>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>风险</th><th>对策</th></tr></thead>
+        <tbody>
+          <tr><td><span class="badge b-red">高</span> ASR 拿不到页面音频(M4)</td><td>PoC 先行,不通过则 v3 仅做 M1~M3,听觉搁置</td></tr>
+          <tr><td><span class="badge b-orange">中</span> LLM 跑题/不自然</td><td>知识库约束 + 少样本(风格样本) + 长度/格式硬约束</td></tr>
+          <tr><td><span class="badge b-orange">中</span> LLM 成本/延迟</td><td>决策层过滤(多数 respond=false 不调生成);缓存;超时降级</td></tr>
+          <tr><td><span class="badge b-orange">中</span> 拟人输入仍被风控</td><td>节流 + 抖动 + 频率上限;保留 v2 定时模式可切回</td></tr>
+          <tr><td><span class="badge b-blue">低</span> 打包体积(本地模型)</td><td>默认云 API;本地模型可选,不进打包</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 十、关键决策点 -->
+  <section id="decision">
+    <div class="sec-head">
+      <div class="sec-num">10</div>
+      <h2>关键决策点(待拍板)</h2>
+    </div>
+
+    <div class="card decision-card">
+      <h3>① ASR 方案</h3>
+      <div class="opt"><span class="pick">✓ 推荐</span><div class="txt"><b>火山引擎</b> — 沿用 v0.x 配置基础,流式延迟低、中文好。需联网+API key。</div></div>
+      <div class="opt"><span class="pick no">备选</span><div class="txt"><b>Whisper 本地</b> — 离线免费,但实时性差、打包体积暴增。</div></div>
+      <div class="opt"><span class="pick no">备选</span><div class="txt"><b>暂缓 ASR</b> — 先做 M1~M3,听觉后置。</div></div>
+    </div>
+
+    <div class="card decision-card">
+      <h3>② LLM 方案(读图需求使其偏向视觉模型)</h3>
+      <div class="opt"><span class="pick">✓ 推荐</span><div class="txt"><b>豆包</b> — 文本+视觉通吃,架构最简,已在 .env.example 备选。读图必需视觉能力。</div></div>
+      <div class="opt"><span class="pick no">备选</span><div class="txt"><b>DeepSeek(文本)+ 豆包/Qwen-VL(视觉)</b> — 文本便宜,但两套模型。</div></div>
+      <div class="opt"><span class="pick no">备选</span><div class="txt"><b>Ollama 本地</b> — 离线,但效果弱、体积大,不适合打包分发。</div></div>
+    </div>
+
+    <div class="card decision-card">
+      <h3>③ 人格生成方式</h3>
+      <div class="opt"><span class="pick">✓ 推荐</span><div class="txt"><b>手配标杆 + 随机生成变体</b> — 核心 5 人群各手配 1 个标杆人格,再用随机维度组合铺出更多变体。</div></div>
+      <div class="opt"><span class="pick no">备选</span><div class="txt"><b>纯手配</b> — 可控但费时,变体少。</div></div>
+      <div class="opt"><span class="pick no">备选</span><div class="txt"><b>纯随机</b> — 多样性强但质量参差。</div></div>
+    </div>
+
+    <div class="card decision-card">
+      <h3>④ 录音来源</h3>
+      <div class="opt"><span class="pick">✓ 推荐</span><div class="txt"><b>两者都支持</b> — 工具自录(开播抓音频存文件)+ 客户导入录音文件。</div></div>
+      <div class="opt"><span class="pick no">备选</span><div class="txt"><b>仅工具自录</b> / <b>仅导入</b></div></div>
+    </div>
+
+    <div class="card decision-card">
+      <h3>⑤ 优先人群</h3>
+      <div class="opt"><span class="pick">✓ 推荐</span><div class="txt"><b>先做高价值 5 人群</b>(小镇中老年/都市银发/都市蓝领/精致妈妈/都市中产),边缘 3 人群后置。</div></div>
+      <div class="opt"><span class="pick no">备选</span><div class="txt"><b>8 人群全做</b> — 覆盖全,但边缘人群 ROI 低。</div></div>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  析命师互动控制台 · v3.0 拓展方案 · 2026-07-05<br>
+  全品类抖音直播人格化智能体 · 分层降级 · 永不罢工
+</footer>
+
+</body>
+</html>

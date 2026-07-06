@@ -25,67 +25,12 @@ import time
 from pathlib import Path
 
 # Windows 控制台 UTF-8 兼容
-if sys.platform == "win32":
+if sys.platform == "win32" and sys.stdout:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 from playwright.async_api import async_playwright
 
 logger = logging.getLogger("douyin_chat")
-
-# 需要设为 httpOnly 的 cookie 名称（安全相关）
-_SECURITY_COOKIES = {
-    "sessionid", "sessionid_ss", "sid_tt", "sid_guard",
-    "uid_tt", "uid_tt_ss",
-    "sid_ucp_v1", "ssid_ucp_v1",
-    "passport_csrf_token", "passport_csrf_token_default",
-    "passport_auth_mix_state", "passport_mfa_token",
-}
-
-# ── Cookie 解析 ──────────────────────────────────
-
-
-def parse_cookie_string(cookie_str: str) -> list[dict]:
-    """解析 document.cookie 格式 (name=val; name=val; ...) → Playwright cookie 列表"""
-    cookies = []
-    for pair in cookie_str.split(";"):
-        pair = pair.strip()
-        if not pair or "=" not in pair:
-            continue
-        name, _, value = pair.partition("=")
-        name = name.strip()
-        value = value.strip()
-        # 去掉包裹引号
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
-            value = value[1:-1]
-
-        is_secure = (
-            name in _SECURITY_COOKIES
-            or "session" in name.lower()
-            or "token" in name.lower()
-            or "ticket" in name.lower()
-        )
-        cookies.append({
-            "name": name,
-            "value": value,
-            "domain": ".douyin.com",
-            "path": "/",
-            "secure": is_secure,
-            "httpOnly": name in _SECURITY_COOKIES,
-            "sameSite": "Lax",
-        })
-    return cookies
-
-
-def _load_cookies_from_file(path: str) -> list[dict]:
-    """从文件读取并解析 cookie"""
-    p = Path(path)
-    if not p.exists():
-        logger.warning(f"cookies 文件不存在: {path}")
-        return []
-    content = p.read_text(encoding="utf-8").strip()
-    if not content:
-        return []
-    return parse_cookie_string(content)
 
 
 # ── 主类 ─────────────────────────────────────────
@@ -95,12 +40,12 @@ class DouyinChat:
     """抖音直播间弹幕发送器
 
     Args:
-        cookies_path: cookies.txt 路径（默认同目录下 cookies.txt）
         headless: 是否无头模式（默认 False，可见浏览器窗口方便调试）
     """
 
     def __init__(self, headless: bool = False):
-        self.user_data_dir = str(Path(__file__).parent / "browser_data")
+        base = Path(__file__).parent
+        self.user_data_dir = str(base / "browser_data")
         self.headless = headless
         self._playwright = None
         self._context = None
@@ -195,15 +140,6 @@ class DouyinChat:
 
         logger.warning("⚠️ 登录超时，将以游客身份运行（弹幕可能受限）")
         return False
-
-    async def _save_cookies(self, cookies: list[dict] | None = None):
-        """保存当前浏览器 cookies 到文件"""
-        if cookies is None:
-            cookies = await self._context.cookies()
-        cookie_str = "; ".join(f'{c["name"]}={c["value"]}' for c in cookies)
-        with open(self.cookies_path, "w", encoding="utf-8") as f:
-            f.write(cookie_str)
-        logger.info(f"💾 已保存 {len(cookies)} 个 cookies 到 {self.cookies_path}")
 
     async def open_room(self, room_url: str, timeout: int = 30) -> bool:
         """打开直播间页面，等待输入框就绪

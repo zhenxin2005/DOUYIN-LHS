@@ -1,5 +1,13 @@
-# 抖音互动软件依赖
-httpx>=0.28.0
-websockets>=12.0
-python-dotenv>=1.0.0
-playwright>=1.40.0
+# 析命师单账号互动亲朋好友静态语义版 — 抖音互动软件依赖
+#
+# 核心依赖（必需）:
+playwright>=1.40.0         # 浏览器自动化（弹幕采集 + 发送）
+
+# 可选依赖:
+# python-dotenv>=1.0.0     # .env 环境变量加载（如不使用 .env 可省略）
+# websocket-client>=1.0.0  # ASR 语音识别（v0.1-v0.3 使用）
+# openai>=1.0.0            # LLM 引擎（v0.3 使用，当前已移除）
+
+# 安装步骤:
+#   pip install -r requirements.txt
+#   playwright install chromium

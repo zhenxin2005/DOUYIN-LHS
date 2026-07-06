@@ -1,190 +1,81 @@
 #!/usr/bin/env python3
 """
-抖音直播间实时互动系统 — 火山引擎 ASR + LLM 智能决策 + 自动弹幕
-
-链路:
-  抖音直播流 → ffmpeg PCM → 火山 BigModel ASR → LLM 决策引擎 → 拟人化弹幕发送
-                                                ↘ 关键词匹配（兜底）
+析命师单账号互动亲朋好友静态语义版 · 抖音直播间定时互动系统
+纯知识库驱动 + 定时发送弹幕（无 ASR / 无 LLM）
 
 用法:
-  python douyin_interact.py <直播间URL或房间ID>
+  python douyin_interact.py               # 启动互动（默认有头浏览器）
+  python douyin_interact.py --headless    # 无头模式
+  python douyin_interact.py --login       # 扫码登录
 
-环境变量 (.env):
-  VOLC_APP_ID        - 火山语音应用 APP ID
-  VOLC_ACCESS_TOKEN  - Access Token
-  VOLC_SECRET_KEY    - Secret Key
-  VOLC_RESOURCE_ID   - 资源 ID (默认: volc.seedasr.sauc.duration)
-  KEYWORDS           - 互动关键词，逗号分隔
-  LLM_PROVIDER       - LLM provider (openai / ollama，默认 ollama)
-  LLM_MODEL          - 模型名 (默认 deepseek-r1:7b)
-  LLM_API_KEY        - API 密钥（openai 模式需要）
-  LLM_BASE_URL       - API 地址
-  OLLAMA_URL         - Ollama 地址 (默认 http://localhost:11434)
+配置:
+  config.json  — 直播间、角色、间隔
+  rules.json   — 知识库角色弹幕
 """
 
-import asyncio
+import argparse
 import json
-import os
+import random
 import re
-import struct
-import subprocess
 import sys
 import time
-import uuid
 from pathlib import Path
 
-# Windows 控制台 UTF-8 兼容
-if sys.platform == "win32":
+# PyInstaller 打包后用运行目录，开发时用脚本目录
+if getattr(sys, 'frozen', False):
+    PROJECT_DIR = Path(sys.executable).parent
+    # 首次运行复制默认配置
+    import shutil as _shutil
+    _bundle = Path(sys._MEIPASS)
+    for _f in ["config.json", "rules.json"]:
+        _dst = PROJECT_DIR / _f
+        if not _dst.exists():
+            _src = _bundle / _f
+            if _src.exists():
+                _shutil.copy2(_src, _dst)
+else:
+    PROJECT_DIR = Path(__file__).parent
+
+if sys.platform == "win32" and sys.stdout:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 try:
-    import httpx
+    from llm_engine import PERSONAS
 except ImportError:
-    sys.exit("pip install httpx")
-
-try:
-    import websockets
-except ImportError:
-    sys.exit("pip install websockets")
-
-try:
-    from dotenv import load_dotenv
-    load_dotenv(Path(__file__).parent / ".env")
-except ImportError:
-    pass
-
-# 弹幕发送模块（可选）
-try:
-    from douyin_chat import DouyinChat
-    CHAT_AVAILABLE = True
-except ImportError:
-    CHAT_AVAILABLE = False
-    DouyinChat = None
-
-# LLM 智能决策引擎（可选）
-try:
-    from llm_engine import create_engine_from_env, LLMReplyGenerator
-    LLM_AVAILABLE = True
-except ImportError:
-    LLM_AVAILABLE = False
-
-# ── 配置 ──────────────────────────────────────────────
-
-VOLC_APP_ID = os.getenv("VOLC_APP_ID", "")
-VOLC_ACCESS_TOKEN = os.getenv("VOLC_ACCESS_TOKEN", "")
-VOLC_RESOURCE_ID = os.getenv("VOLC_RESOURCE_ID", "volc.seedasr.sauc.duration")
-
-WS_URL = "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream"
-
-CHUNK_MS = 200
-CHUNK_SIZE = 16000 * 2 * CHUNK_MS // 1000   # 6400 bytes
-
-# 火山引擎 auto-assigns sequence: FullClientRequest=1, first audio=2
-AUDIO_START_SEQ = 2
-
-# ── 互动规则 ──────────────────────────────────
-# 每条规则: (主播话术关键词列表, 自动回复内容)
-# 从上到下匹配 ASR 识别文本，命中第一条就发送对应回复
-DEFAULT_REPLY_RULES = [
-    # 1) 初轮摸底憋单 — 引导扣1统计人数
-    (["扣1","扣个1","打1","统一扣","全屏扣","没扣1","扣一波","统计人数","人够了才开","人够了"], "1111111"),
-
-    # 2) 报尺码互动（服饰/鞋品） — 问L码能穿到多大
-    (["尺码","穿的尺码","报尺码","穿什么码","多大码","预留库存","按大家报的尺码","M码","L码","XL码","S码","把尺码"], "L码能穿到多大"),
-
-    # 3) 选颜色互动（多色款） — 喜欢哪个颜色直接打出来
-    (["什么颜色","想要什么颜色","要什么颜色","喜欢什么颜色","选颜色","拍颜色","扣黑","扣白","经典色","统计色系","统计完色系"], "要白色"),
-
-    # 4) 精准锁客互动 — 确定要带一单的扣确定
-    (["确定","带一单","扣确定","锁库存","优先安排发货","优先锁库存","带一单回家","确定的家人"], "确定"),
-
-    # 5) 最终集结 + 倒计时互动 — 还没报的抓紧补
-    (["最后30秒","最后三十秒","准备就绪","倒计时开","还没报尺码","还没选颜色","抓紧补","倒数直接开","我倒数"], "L码能穿到多大"),
-
-    # 6) 补单回流互动 — 没抢到的扣补货
-    (["补货","加库存","没抢到","没赶上","申请加库存","呼声高","追加库存","没抢到的家人","没赶上的家人"], "补货"),
-
-    # 7) 加急互动 — 主播说加急安排
-    (["加急","加急安排","加急发","加急单","加急处理"], "加急"),
-
-    # 9) 尾单清场互动 — 最后库存，纠结尺码颜色的赶紧打出来
-    (["最后库存","最后少量","清完这波","直接下架","不再补单","清仓","尾单","纠结尺码","纠结颜色"], "L码能穿到多大"),
-
-    # 10) 身高体重（直播通用）
-    (["身高","体重","多重","多高","身高体重","报身高","报体重","多少斤","多少公斤","多胖","多瘦","三围"], "160 110"),
-
-]
-
-# 兼容 .env 中 KEYWORDS 配置（追加为兜底规则）
-_env_kw = [k.strip() for k in os.getenv("KEYWORDS", "").split(",") if k.strip()]
-if _env_kw:
-    DEFAULT_REPLY_RULES.append((_env_kw, os.getenv("REPLY_TEXT", "1111111")))
-REPLY_RULES = DEFAULT_REPLY_RULES
-
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0.0.0 Safari/537.36"
+    PERSONAS = [{"name": "默认用户", "tone": "", "trait": "", "style": "", "messages": []}]
 
 
-# ── 火山引擎二进制协议 ──────────────────────────────
+# ══════════════════════════════════════════════
+#  配置加载
+# ══════════════════════════════════════════════
 
-def make_header(msg_type: int, flags: int = 0, serial: int = 1, comp: int = 0) -> bytes:
-    """4字节: [proto=1|hdr_sz=1] [msg|flags] [serial|comp] [reserved]"""
-    return struct.pack("BBBB",
-        (1 << 4) | 1,          # byte 0
-        (msg_type << 4) | flags,  # byte 1
-        (serial << 4) | comp,     # byte 2
-        0,                        # byte 3
-    )
-
-
-def pack(header: bytes, payload: bytes, seq: int | None = None) -> bytes:
-    """Header + [Sequence 4B] + PayloadSize 4B + Payload"""
-    buf = bytearray(header)
-    if seq is not None:
-        buf.extend(struct.pack(">i", seq))
-    buf.extend(struct.pack(">I", len(payload)))
-    buf.extend(payload)
-    return bytes(buf)
+def load_config() -> dict:
+    path = PROJECT_DIR / "config.json"
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
 
 
-def full_client_request() -> bytes:
-    params = {
-        "user": {"uid": "douyin_interact"},
-        "audio": {"format": "pcm", "rate": 16000, "bits": 16, "channel": 1, "codec": "raw", "language": "zh-CN"},
-        "request": {
-            "model_name": "bigmodel",
-            "enable_itn": True,
-            "enable_punc": True,
-            "result_type": "single",
-        },
-    }
-    return pack(make_header(1, flags=0, serial=1), json.dumps(params).encode())
+def load_persona_messages() -> dict[str, list[str]]:
+    path = PROJECT_DIR / "rules.json"
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                result = {}
+                for name, val in data.items():
+                    if isinstance(val, dict):
+                        result[name] = val.get("messages", [])
+                    elif isinstance(val, list):
+                        result[name] = val
+                return result
+        except Exception:
+            pass
+    return {p["name"]: list(p.get("messages", [])) for p in PERSONAS}
 
-
-def audio_frame(audio: bytes, seq: int, last: bool = False) -> bytes:
-    """Audio Only: msg_type=2, flags=1(positive seq), audio payload"""
-    flags = 0x03 if last else 0x01  # 0x03 = negative seq (end)
-    seq_val = -(seq) if last else seq
-    return pack(make_header(2, flags, 0), audio, seq_val)
-
-
-def parse_response(data: bytes):
-    """解析服务器响应 — 跳过可能的前导非JSON字节"""
-    if len(data) < 8:
-        return None
-    try:
-        payload = data[8:]
-        start = payload.find(b"{")
-        if start < 0:
-            return None
-        obj = json.loads(payload[start:].decode())
-        if "error" in obj:
-            return obj
-        return obj
-    except Exception:
-        return None
-
-
-# ── 直播流 ────────────────────────────────────────
 
 def extract_room_id(s: str) -> str:
     for p in [r"live\.douyin\.com/(\d+)", r"/live/(\d+)"]:
@@ -196,298 +87,292 @@ def extract_room_id(s: str) -> str:
     raise ValueError(f"无法解析: {s}")
 
 
-def get_stream(room_id: str) -> dict:
-    url = f"https://live.douyin.com/{room_id}"
-    h = {"User-Agent": UA, "Referer": "https://live.douyin.com/"}
-    with httpx.Client(headers=h, follow_redirects=True, timeout=30) as c:
-        resp = c.get(url)
-        resp.raise_for_status()
-        html = resp.text.replace("\\u0026", "&")
+# ══════════════════════════════════════════════
+#  主运行器
+# ══════════════════════════════════════════════
 
-    flv = re.findall(r'(https?://[^"\s<>]+\.douyincdn\.com[^"\s<>]*\.flv[^"\s<>]*)', html)
-    anchor = re.search(r'"nickname"\s*:\s*"([^"]*)"', html)
-    status = re.search(r'"status"\s*:\s*(\d+)', html)
-    if status and int(status.group(1)) == 4:
-        return {}
-    if not flv:
-        return {}
+def run(config: dict, headless: bool = False):
+    """角色弹幕定时发送（同步 Playwright API）"""
+    from playwright.sync_api import sync_playwright
 
-    def rank(u):
-        if "_or4" in u: return 10
-        if "_hd" in u: return 7
-        return 1
-
-    return {
-        "url": max(flv, key=rank),
-        "anchor": anchor.group(1) if anchor else "?",
-        "live": True,
-    }
-
-
-def ffmpeg_audio(url: str) -> subprocess.Popen:
-    return subprocess.Popen([
-        "ffmpeg", "-hide_banner", "-loglevel", "error",
-        "-user_agent", UA,
-        "-headers", "Referer: https://live.douyin.com/\r\n",
-        "-rw_timeout", "30000000", "-reconnect", "1", "-reconnect_streamed", "1",
-        "-i", url, "-vn", "-ac", "1", "-ar", "16000", "-sample_fmt", "s16",
-        "-f", "s16le", "-",
-    ], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
-
-
-# ── 主逻辑 ────────────────────────────────────────
-
-MAX_RETRIES = 11  # 首次尝试 + 最多 10 次重连后退出
-
-async def run(room_id: str):
-    print("=" * 50)
-    print("  抖音互动 PoC — 火山(豆包) ASR  (自动重连版)")
-    print("=" * 50)
-
-    # 0. 初始化弹幕模块（只做一次，跨重连复用）
-    chat = None
-    if CHAT_AVAILABLE:
-        try:
-            chat = DouyinChat(headless=False)
-            await chat.start()
-
-            # 自动处理登录：先尝试已有 cookies，失效则打开页面让用户扫码
-            await chat.ensure_login()
-
-            room_url = f"https://live.douyin.com/{room_id}"
-            await chat.open_room(room_url)
-            if chat.is_ready:
-                print("  ✅ 弹幕模块已就绪")
-            else:
-                print("  ⚠️ 弹幕模块已启动（输入框未确认，运行中会重试）")
-        except Exception as e:
-            print(f"  ⚠️ 弹幕模块初始化失败: {e}")
-            print("     ASR 仍会运行，但不会自动发送弹幕")
-            chat = None
-    else:
-        print("  ⚠️ 弹幕模块未安装 (需 pip install playwright)")
-
-    # 0.5 初始化 LLM 决策引擎（只做一次，跨重连复用）
-    llm_engine = None
-    if LLM_AVAILABLE:
-        try:
-            llm_engine = create_engine_from_env()
-            if llm_engine.is_available:
-                print(f"  ✅ LLM 决策引擎已就绪: {llm_engine.provider_name}/{llm_engine.model}")
-            else:
-                print(f"  ⚠️ LLM 引擎未就绪（API 未配置），将使用关键词兜底")
-        except Exception as e:
-            print(f"  ⚠️ LLM 引擎初始化失败: {e}")
-            print("     将使用传统关键词匹配")
-            llm_engine = None
-    else:
-        print("  ⚠️ LLM 引擎模块未找到，使用传统关键词匹配")
-
-    retry = 0
-    while retry < MAX_RETRIES:
-        retry += 1
-        if retry > 1:
-            print(f"\n🔁 第 {retry} 次重连 ({time.strftime('%H:%M:%S')})...")
-            await asyncio.sleep(3)
-
-        try:
-            await _run_once(room_id, chat, llm_engine)
-        except websockets.ConnectionClosed as e:
-            print(f"\n  ⚠️ WebSocket 断开: {e}")
-            print(f"  等待 5 秒后重连...")
-            await asyncio.sleep(5)
-            continue
-        except (OSError, ConnectionError, asyncio.TimeoutError) as e:
-            print(f"\n  ⚠️ 网络异常: {e}")
-            print(f"  等待 8 秒后重连...")
-            await asyncio.sleep(8)
-            continue
-        except Exception as e:
-            # 非预期异常：打印堆栈然后重试
-            import traceback
-            traceback.print_exc()
-            print(f"\n  ⚠️ 未知错误: {e}")
-            print(f"  等待 10 秒后重连...")
-            await asyncio.sleep(10)
-            continue
-
-    print(f"\n  ⛔ 已达最大重连次数 ({MAX_RETRIES - 1} 次)，程序退出")
-    if chat:
-        await chat.close()
-
-
-async def _run_once(room_id: str, chat, llm_engine=None):
-    """单次运行会话（含一次完整的 WebSocket 连接）"""
-    # 1. 获取流
-    info = get_stream(room_id)
-    if not info or not info.get("live"):
-        print("  ❌ 未开播，30 秒后重试...")
-        await asyncio.sleep(30)
-        raise ConnectionError("未开播")
-    print(f"\n  主播: {info['anchor']}  |  流: {info['url'][:50]}...")
-
-    # 2. 启动 ffmpeg
-    ff = ffmpeg_audio(info["url"])
-    await asyncio.sleep(1.5)
-    if ff.poll() is not None:
-        print("  ❌ ffmpeg 失败")
-        ff.terminate()
-        raise OSError("ffmpeg 启动失败")
-    print("  ✅ 音频就绪")
-
-    # 3. 连接火山引擎
-    headers = {
-        "X-Api-App-Key": VOLC_APP_ID,
-        "X-Api-Access-Key": VOLC_ACCESS_TOKEN,
-        "X-Api-Resource-Id": VOLC_RESOURCE_ID,
-        "X-Api-Request-Id": str(uuid.uuid4()),
-        "X-Api-Connect-Id": str(uuid.uuid4()),
-    }
-    ws = await asyncio.wait_for(
-        websockets.connect(WS_URL, additional_headers=headers, max_size=2**24),
-        timeout=15,
-    )
-    print("  ✅ 火山 ASR 已连接")
-
-    # 4. 发送 Full Client Request
-    await ws.send(full_client_request())
-
-    # 5. 等待第一条结果
-    print("  等待第一条响应...")
-    first = await asyncio.wait_for(ws.recv(), timeout=10)
-    r = parse_response(first)
-    if r:
-        lid = r.get("result", {}).get("additions", {}).get("log_id", "")
-        msg = r.get("error", "")
-        if msg:
-            print(f"  ⚠️ 服务器错误: {msg[:200]}")
-            ff.terminate()
-            await ws.close()
-            raise ConnectionError(f"ASR 服务器错误: {msg[:200]}")
-        print(f"  ✅ 服务器就绪 (log_id={lid[:16]}...)")
-
-    # 6. 后台读取器 + LLM 决策 + 弹幕发送
-    last_text = ""
-    last_send_time = 0.0
-    SEND_COOLDOWN = 6.0
-
-    async def reader():
-        nonlocal last_text, last_send_time
-        try:
-            async for raw in ws:
-                r = parse_response(raw)
-                if not r:
-                    continue
-                if r.get("error"):
-                    print(f"\n  ⚠️ {r['error'][:200]}")
-                    continue
-                txt = r.get("result", {}).get("text", "")
-                if not txt:
-                    utts = r.get("result", {}).get("utterances", [])
-                    txt = utts[-1].get("text", "") if utts else ""
-                if txt and txt != last_text:
-                    last_text = txt
-                    print(f"\r  🎤 {txt}", end="", flush=True)
-
-                    # ── LLM 决策 / 关键词兜底 ──
-                    reply = None
-                    source = ""
-
-                    # 优先 LLM 引擎
-                    if llm_engine and llm_engine.is_available:
-                        reply = await llm_engine.generate(txt)
-                        if reply:
-                            source = "LLM"
-                            print(f"\n  🧠 [LLM] → {reply}")
-
-                    # LLM 未生成 → 关键词兜底
-                    if not reply:
-                        matched_keywords = []
-                        matched_reply = None
-                        for keywords, rule_reply in REPLY_RULES:
-                            found = [kw for kw in keywords if kw in txt]
-                            if found:
-                                matched_keywords = found
-                                matched_reply = rule_reply
-                                break
-                        if matched_keywords:
-                            reply = matched_reply
-                            source = f"关键词: {', '.join(matched_keywords)}"
-
-                    # ── 发送弹幕 ──
-                    if reply:
-                        now = time.time()
-                        if chat and now - last_send_time >= SEND_COOLDOWN:
-                            last_send_time = now
-                            print(f"\n  🎯 [{source}] → {reply}")
-                            try:
-                                await chat.send_message(reply)
-                            except Exception as e:
-                                print(f"  ⚠️ 弹幕发送异常: {e}")
-                        else:
-                            print(f"\n  🎯 [{source}] → {reply} (冷却中)")
-        except websockets.ConnectionClosed:
-            pass
-
-    rtask = asyncio.create_task(reader())
-
-    # 7. 主循环：读取 ffmpeg stdout → 发送 WebSocket
-    seq = AUDIO_START_SEQ - 1
-    total = 0
-    ts = time.time()
-    print(f"\n🔊 开始 (Ctrl+C 停止)...\n")
-
-    try:
-        loop = asyncio.get_event_loop()
-        while ff.poll() is None:
-            chunk = await loop.run_in_executor(None, ff.stdout.read, CHUNK_SIZE)
-            if not chunk:
-                break
-            seq += 1
-            await ws.send(audio_frame(chunk, seq))
-            total += len(chunk)
-            await asyncio.sleep(CHUNK_MS / 1000.0)
-
-        if ws.state == websockets.protocol.State.OPEN:
-            await ws.send(audio_frame(b"", seq + 1, last=True))
-    except websockets.ConnectionClosed:
-        raise  # 让上层重连逻辑处理
-    except KeyboardInterrupt:
+    room_url = config.get("room_url", "")
+    if not room_url:
+        print("❌ 未配置 room_url，请检查 config.json")
         return
-    finally:
-        elapsed = time.time() - ts
-        print(f"\n  时长: {elapsed:.0f}s  |  音频: {total/1024:.0f}KB  |  包: {seq}")
-        rtask.cancel()
-        try:
-            await rtask
-        except asyncio.CancelledError:
-            pass
-        await ws.close()
-        ff.terminate()
-        try:
-            ff.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            ff.kill()
-        print("  已停止\n")
 
+    send_interval = config.get("send_interval", 45)
+    persona_interval = config.get("rotate_interval", 300)
+    active_personas = config.get("personas", [])
+
+    personas = [p for p in PERSONAS if p["name"] in (active_personas or [])]
+    if not personas:
+        personas = PERSONAS
+
+    persona_messages = load_persona_messages()
+    total_msgs = sum(len(v) for v in persona_messages.values())
+
+    print(f"\n{'=' * 50}")
+    print(f"  析命师单账号互动亲朋好友静态语义版 · 角色弹幕")
+    print(f"{'=' * 50}")
+    print(f"  📺 直播间: {room_url}")
+    print(f"  🎭 角色: {', '.join(p['name'] for p in personas)}")
+    print(f"  💬 弹幕总数: {total_msgs} 条  |  ⏰ 间隔: {send_interval}s")
+    print(f"  👤 模式: {'无头(headless)' if headless else '有头(可见)'}")
+
+    user_data_dir = str(PROJECT_DIR / "browser_data")
+    # 命令行 --user-data-dir 覆盖
+    _cli_udd = config.get("_user_data_dir") if 'config' in dir() else None
+    if _cli_udd:
+        user_data_dir = _cli_udd
+
+    # 停止标记文件：GUI 写入此文件 → 主循环检测到后优雅退出 → finally 关浏览器
+    # 定义在 with 之前，确保所有 return 路径也能清理残留标记
+    stop_flag = PROJECT_DIR / ".stop_flag"
+    stop_flag.unlink(missing_ok=True)  # 启动时清掉残留标记
+
+    with sync_playwright() as p:
+        ctx = p.chromium.launch_persistent_context(
+            user_data_dir=user_data_dir,
+            headless=headless,
+            args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-gpu"],
+            viewport={"width": 1280, "height": 720},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0.0.0 Safari/537.36",
+        )
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+
+        room_id = extract_room_id(room_url)
+        page.goto(f"https://live.douyin.com/{room_id}", wait_until="domcontentloaded", timeout=30000)
+        time.sleep(5)
+
+        # 检查登录态
+        cookies = ctx.cookies()
+        if not any(c["name"] == "sessionid" for c in cookies):
+            print("  ⚠️ 未检测到登录态 (sessionid)，请先扫码登录！")
+            print("  💡 执行: python douyin_interact.py --login")
+            try:
+                (PROJECT_DIR / "screenshots").mkdir(exist_ok=True)
+                page.screenshot(path=str(PROJECT_DIR / "screenshots" / "debug_no_login.png"))
+                print("  📸 截图已保存: screenshots/debug_no_login.png")
+            except Exception:
+                pass
+            ctx.close()
+            stop_flag.unlink(missing_ok=True)
+            return
+        print("  🔑 登录态有效")
+
+        # 找输入框
+        input_elem = page.query_selector('[class*="zone-container"]')
+        if not input_elem:
+            input_elem = page.query_selector('[class*="editor-kit"]')
+        if not input_elem:
+            input_elem = page.query_selector("div[contenteditable='true']")
+
+        if not input_elem:
+            print("  ⚠️ 未找到输入框（可能直播间未开播或页面结构变化）")
+            try:
+                (PROJECT_DIR / "screenshots").mkdir(exist_ok=True)
+                page.screenshot(path=str(PROJECT_DIR / "screenshots" / "debug_no_input.png"))
+                print("  📸 截图已保存: screenshots/debug_no_input.png")
+            except Exception:
+                pass
+            ctx.close()
+            stop_flag.unlink(missing_ok=True)
+            return
+
+        print("  ✅ 弹幕模块已就绪")
+
+        persona_idx = 0
+        persona_switched_at = time.time()
+        last_reply = ""
+        msg_index: dict[str, int] = {}  # 每个角色独立的游标，避免切换角色时跳过弹幕
+        shuffled_msgs: dict[str, list[str]] = {}
+
+        def _get_next_msg(persona_name: str) -> str:
+            nonlocal last_reply
+            msgs = persona_messages.get(persona_name, [])
+            if not msgs:
+                return ""
+            idx = msg_index.get(persona_name, 0)
+            if persona_name not in shuffled_msgs or idx >= len(shuffled_msgs[persona_name]):
+                shuffled = list(msgs)
+                random.shuffle(shuffled)
+                if len(shuffled) > 1 and shuffled[0] == last_reply:
+                    shuffled[0], shuffled[1] = shuffled[1], shuffled[0]
+                shuffled_msgs[persona_name] = shuffled
+                idx = 0
+            reply = shuffled_msgs[persona_name][idx]
+            msg_index[persona_name] = idx + 1
+            last_reply = reply
+            return reply
+
+        print(f"\n🔊 开始定时发送 (Ctrl+C 停止)...\n")
+
+        try:
+            while True:
+                jitter = send_interval * random.uniform(-0.3, 0.3)
+                actual_wait = max(5, send_interval + jitter)
+                # 分段睡眠，以便及时响应停止标记
+                slept = 0.0
+                while slept < actual_wait:
+                    if stop_flag.exists():
+                        break
+                    time.sleep(min(0.5, actual_wait - slept))
+                    slept += 0.5
+                if stop_flag.exists():
+                    print("  ⏹ 收到停止信号")
+                    break
+
+                now = time.time()
+
+                # 角色轮换
+                if now - persona_switched_at >= persona_interval:
+                    persona_idx = (persona_idx + 1) % len(personas)
+                    persona_switched_at = now
+                    print(f"  🔄 角色 → {personas[persona_idx]['name']}")
+
+                current_persona = personas[persona_idx]
+                reply = _get_next_msg(current_persona["name"])
+                if not reply:
+                    continue
+
+                print(f"  ⏰ [{personas[persona_idx]['name']}] → {reply}")
+
+                try:
+                    el = page.query_selector('[class*="zone-container"]')
+                    if not el:
+                        el = page.query_selector('[class*="editor-kit"]')
+                    if not el:
+                        el = page.query_selector("div[contenteditable='true']")
+                    if not el:
+                        print("  ⚠️ 未找到输入框")
+                        continue
+                    el.click()
+                    time.sleep(0.2)
+                    el.evaluate("el2 => { el2.textContent = ''; el2.innerHTML = ''; el2.focus(); }")
+                    time.sleep(0.1)
+                    # 逐字注入：通过 evaluate 传参，避免字符串拼接导致的转义/注入问题
+                    for ch in reply:
+                        el.evaluate(
+                            """(el2, ch) => {
+                                const sel = window.getSelection();
+                                const range = sel.getRangeAt(0);
+                                range.deleteContents();
+                                const tn = document.createTextNode(ch);
+                                range.insertNode(tn);
+                                range.setStartAfter(tn);
+                                sel.removeAllRanges();
+                                sel.addRange(range);
+                                el2.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:ch}));
+                            }""",
+                            ch,
+                        )
+                        time.sleep(0.01)
+                    time.sleep(0.3)
+                    page.evaluate("""() => {
+                        ['keydown','keypress','keyup'].forEach(type => {
+                            document.dispatchEvent(new KeyboardEvent(type, {
+                                key:'Enter', code:'Enter', keyCode:13, which:13,
+                                bubbles:true, cancelable:true, composed:true,
+                            }));
+                        });
+                    }""")
+                    time.sleep(0.5)
+                except Exception as e:
+                    print(f"  ⚠️ 发送异常: {e}")
+
+        except KeyboardInterrupt:
+            print("\n  ⏹ 用户停止")
+        finally:
+            ctx.close()
+            stop_flag.unlink(missing_ok=True)
+            print("  🛑 已停止")
+
+
+# ══════════════════════════════════════════════
+#  扫码登录
+# ══════════════════════════════════════════════
+
+def do_login(udd: str | None = None):
+    """有头浏览器扫码登录
+    udd: 账号浏览器数据目录(多账号时传 accounts/<name>/)
+    """
+    from playwright.sync_api import sync_playwright
+
+    print(f"\n{'=' * 50}")
+    print(f"  🔑 扫码登录")
+    print(f"{'=' * 50}")
+    print(f"  🌐 打开有头浏览器...")
+    print(f"  📱 请用抖音 APP 扫一扫登录")
+    print(f"  ✅ 登录成功后自动关闭\n")
+
+    user_data_dir = str(PROJECT_DIR / "browser_data")
+    if udd and Path(udd).exists():
+        user_data_dir = udd
+    print(f"  📂 登录态保存到: {user_data_dir}")
+
+    with sync_playwright() as p:
+        ctx = p.chromium.launch_persistent_context(
+            user_data_dir=user_data_dir,
+            headless=False,
+            args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-gpu"],
+            viewport={"width": 1280, "height": 720},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0.0.0 Safari/537.36",
+        )
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        page.goto("https://www.douyin.com/", wait_until="domcontentloaded")
+
+        print("\n" + "=" * 60)
+        print("  📱 请在浏览器窗口中扫码登录抖音")
+        print("  👀 登录成功后能看到右上角有你的头像")
+        print("  ⏳ 检测到登录成功后自动关闭...")
+        print("=" * 60 + "\n")
+
+        for i in range(180):
+            time.sleep(1)
+            cookies = ctx.cookies()
+            if any(c["name"] == "sessionid" for c in cookies):
+                print("\n  ✅ 登录成功！")
+                break
+            if i % 15 == 0 and i > 0:
+                print(f"  ⏳ 等待登录... {i}秒")
+
+        ctx.close()
+
+    print(f"\n  ✅ 登录态已保存到 browser_data/")
+    print(f"  💡 现在可以启动互动: python douyin_interact.py\n")
+
+
+# ══════════════════════════════════════════════
+#  主入口
+# ══════════════════════════════════════════════
 
 def main():
-    if not VOLC_APP_ID or not VOLC_ACCESS_TOKEN:
-        print("❌ 请在 .env 中设置 VOLC_APP_ID 和 VOLC_ACCESS_TOKEN")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="析命师单账号互动亲朋好友静态语义版 · 抖音直播间定时互动系统",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  python douyin_interact.py              # 启动互动
+  python douyin_interact.py --headless   # 无头模式启动
+  python douyin_interact.py --login      # 扫码登录
+        """,
+    )
+    parser.add_argument("--login", action="store_true", help="有头浏览器扫码登录")
+    parser.add_argument("--headless", action="store_true", help="无头模式")
+    parser.add_argument("--user-data-dir", type=str, default=None,
+                        help="账号浏览器数据目录(默认 browser_data/,多账号时用 accounts/<name>/)")
 
-    try:
-        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
-    except Exception:
-        print("❌ 未找到 ffmpeg")
-        sys.exit(1)
+    args = parser.parse_args()
 
-    room = sys.argv[1] if len(sys.argv) > 1 else os.getenv("DOUYIN_ROOM_URL", "")
-    if not room:
-        print("用法: python douyin_interact.py <直播间URL>")
-        sys.exit(1)
+    if args.login:
+        do_login(args.user_data_dir)
+        return
 
-    asyncio.run(run(extract_room_id(room)))
+    config = load_config()
+    # 命令行 --user-data-dir 覆盖 config 里的 account
+    if args.user_data_dir:
+        config["_user_data_dir"] = args.user_data_dir
+    run(config, headless=args.headless)
 
 
 if __name__ == "__main__":
