@@ -19,6 +19,9 @@ __pycache__/
 *.pyc
 *.pyo
 
+# ── 临时调试脚本(不入库,保留在工作区便于复测) ──
+_test_*.py
+
 # ── 运行产物 ──
 screenshots/
 record_data/

@@ -35,7 +35,7 @@ RULES_FILE = ROOT / "rules.json"
 DEFAULT_API_BASE = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-chat"
 DEFAULT_TEMPERATURE = 0.8
-DEFAULT_MAX_TOKENS = 64
+DEFAULT_MAX_TOKENS = 512  # 推理模型(MiniMax-M3 / deepseek-reasoner 等)需要更大预算:思考+JSON
 DEFAULT_TIMEOUT_S = 8
 DEFAULT_MODE = "pick"  # "pick" | "generate"
 
@@ -255,11 +255,17 @@ def think(persona: dict, config: dict) -> dict:
             max_tokens=DEFAULT_MAX_TOKENS,
         )
         text = (resp.choices[0].message.content or "").strip()
-        parsed = _parse_json_response(text)
+        parsed = _parse_json_response(text, debug_log=print)
         if parsed is None:
+            # 解析失败,原文打到 stderr,便于诊断
+            print(f"  [LLM] JSON 解析失败,原文: {text[:200]!r}", file=sys.stderr)
             return fallback
+        # 成功路径:打一行简明日志,确认 LLM 真的在工作
+        print(f"  [LLM] ✓ respond={parsed.get('respond')} content={parsed.get('content')!r}")
         return parsed
-    except Exception:
+    except Exception as e:
+        # 把异常类型 + 消息打到 stderr,而不是静默吞掉
+        print(f"  [LLM] ✗ 调用失败: {type(e).__name__}: {e}", file=sys.stderr)
         return fallback
 
 
@@ -273,21 +279,42 @@ def fallback_pick(persona: dict) -> str:
     return random.choice(messages)
 
 
-def _parse_json_response(text: str) -> Optional[dict]:
-    """从 LLM 输出里抓 JSON。失败返回 None。"""
+def _parse_json_response(text: str, debug_log=None) -> Optional[dict]:
+    """从 LLM 输出里抓 JSON。失败返回 None。可选 debug_log(可调用)输出诊断。
+    自动剥离 reasoning models 的 <think>...</think> 标签和 markdown 代码块。
+    """
     if not text:
+        if debug_log:
+            debug_log(f"  [LLM] _parse_json: 文本为空")
         return None
-    # 抓第一个 {...} 块
+    # 1) 去掉 reasoning models 的思考块(MiniMax-M3 / deepseek-reasoner 等)
+    text = re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL)
+    # 2) 去掉 markdown 代码块围栏 ```json ... ```
+    text = re.sub(r"```\w*\n.*?\n```\s*", "", text, flags=re.DOTALL)
+    text = text.strip()
+    if not text:
+        if debug_log:
+            debug_log(f"  [LLM] _parse_json: 剥离 think/代码块后文本为空")
+        return None
+    # 3) 抓第一个 {...} 块
     m = re.search(r"\{.*?\}", text, re.DOTALL)
     if not m:
+        if debug_log:
+            debug_log(f"  [LLM] _parse_json: 未找到 {{...}} 块,原文={text[:200]!r}")
         return None
     try:
         data = json.loads(m.group(0))
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        if debug_log:
+            debug_log(f"  [LLM] _parse_json: JSON 语法错误 {e},原文={m.group(0)[:200]!r}")
         return None
     if not isinstance(data, dict):
+        if debug_log:
+            debug_log(f"  [LLM] _parse_json: 解析结果非 dict: {type(data).__name__}")
         return None
     if "content" not in data:
+        if debug_log:
+            debug_log(f"  [LLM] _parse_json: 缺少 content 字段, keys={list(data.keys())}")
         return None
     return {
         "respond": bool(data.get("respond", True)),
