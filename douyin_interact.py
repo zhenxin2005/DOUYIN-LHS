@@ -40,9 +40,12 @@ if sys.platform == "win32" and sys.stdout:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 try:
-    from llm_engine import PERSONAS
+    from llm_engine import PERSONAS, think
 except ImportError:
     PERSONAS = [{"name": "默认用户", "tone": "", "trait": "", "style": "", "messages": []}]
+    def think(persona, config):  # noqa: F811 — 兜底：fallback 到 messages 随机
+        msgs = persona.get("messages") or []
+        return {"respond": True, "content": random.choice(msgs) if msgs else "", "emotion": "neutral"}
 
 from humanized_input import type_humanized, DEFAULT_TYPING_STYLE  # M3 拟人输入
 
@@ -103,12 +106,32 @@ def run(config: dict, headless: bool = False):
         return
 
     send_interval = config.get("send_interval", 45)
-    persona_interval = config.get("rotate_interval", 300)
+    bullet_strategy = config.get("bullet_strategy", "随机")
     active_personas = config.get("personas", [])
+
+    # M1 LLM 配置（llm_enabled=false 时完全走 v2 路径）
+    llm_enabled = bool(config.get("llm_enabled", False))
+    llm_config = {
+        "llm_api_key":   config.get("llm_api_key", ""),
+        "llm_base_url":  config.get("llm_base_url", "https://api.deepseek.com"),
+        "llm_model":     config.get("llm_model", "deepseek-chat"),
+        "llm_temperature": float(config.get("llm_temperature", 0.8)),
+        "llm_mode":      config.get("llm_mode", "pick"),
+        "llm_timeout":   float(config.get("llm_timeout", 8)),
+    }
+    if llm_enabled:
+        if not llm_config["llm_api_key"]:
+            print("  ⚠️ llm_enabled=true 但 llm_api_key 为空，自动降级到 v2 路径")
+            llm_enabled = False
+        else:
+            masked = llm_config["llm_api_key"][:4] + "***" + llm_config["llm_api_key"][-4:]
+            print(f"  🤖 LLM 已启用: {llm_config['llm_model']} @ {llm_config['llm_base_url']}  key={masked}")
+    else:
+        print(f"  💤 LLM 未启用（v2 静态模式）—— GUI Tab 3 开启后可激活")
 
     personas = [p for p in PERSONAS if p["name"] in (active_personas or [])]
     if not personas:
-        personas = PERSONAS
+        personas = PERSONAS[:1] if PERSONAS else [{"name": "默认用户", "tone": "", "trait": "", "style": "", "messages": []}]
 
     persona_messages = load_persona_messages()
     total_msgs = sum(len(v) for v in persona_messages.values())
@@ -117,8 +140,8 @@ def run(config: dict, headless: bool = False):
     print(f"  析命师单账号互动亲朋好友静态语义版 · 角色弹幕")
     print(f"{'=' * 50}")
     print(f"  📺 直播间: {room_url}")
-    print(f"  🎭 角色: {', '.join(p['name'] for p in personas)}")
-    print(f"  💬 弹幕总数: {total_msgs} 条  |  ⏰ 间隔: {send_interval}s")
+    print(f"  🎭 当前角色: {personas[0]['name']}")
+    print(f"  💬 弹幕总数: {total_msgs} 条  |  ⏰ 间隔: {send_interval}s  |  策略: {bullet_strategy}")
     print(f"  👤 模式: {'无头(headless)' if headless else '有头(可见)'}")
 
     user_data_dir = str(PROJECT_DIR / "browser_data")
@@ -183,10 +206,8 @@ def run(config: dict, headless: bool = False):
 
         print("  ✅ 弹幕模块已就绪")
 
-        persona_idx = 0
-        persona_switched_at = time.time()
         last_reply = ""
-        msg_index: dict[str, int] = {}  # 每个角色独立的游标，避免切换角色时跳过弹幕
+        msg_index: dict[str, int] = {}  # 每个角色独立的游标
         shuffled_msgs: dict[str, list[str]] = {}
 
         def _get_next_msg(persona_name: str) -> str:
@@ -194,16 +215,27 @@ def run(config: dict, headless: bool = False):
             msgs = persona_messages.get(persona_name, [])
             if not msgs:
                 return ""
-            idx = msg_index.get(persona_name, 0)
-            if persona_name not in shuffled_msgs or idx >= len(shuffled_msgs[persona_name]):
-                shuffled = list(msgs)
-                random.shuffle(shuffled)
-                if len(shuffled) > 1 and shuffled[0] == last_reply:
-                    shuffled[0], shuffled[1] = shuffled[1], shuffled[0]
-                shuffled_msgs[persona_name] = shuffled
-                idx = 0
-            reply = shuffled_msgs[persona_name][idx]
-            msg_index[persona_name] = idx + 1
+            if bullet_strategy == "循环":
+                # 顺序循环，不打乱
+                idx = msg_index.get(persona_name, 0) % len(msgs)
+                msg_index[persona_name] = idx + 1
+                reply = msgs[idx]
+                # 防连续重复：与上一条相同时跳过
+                if reply == last_reply and len(msgs) > 1:
+                    reply = msgs[(idx + 1) % len(msgs)]
+                    msg_index[persona_name] = idx + 2
+            else:
+                # 随机策略：shuffle 后顺序消费，耗尽再 shuffle
+                idx = msg_index.get(persona_name, 0)
+                if persona_name not in shuffled_msgs or idx >= len(shuffled_msgs[persona_name]):
+                    shuffled = list(msgs)
+                    random.shuffle(shuffled)
+                    if len(shuffled) > 1 and shuffled[0] == last_reply:
+                        shuffled[0], shuffled[1] = shuffled[1], shuffled[0]
+                    shuffled_msgs[persona_name] = shuffled
+                    idx = 0
+                reply = shuffled_msgs[persona_name][idx]
+                msg_index[persona_name] = idx + 1
             last_reply = reply
             return reply
 
@@ -226,18 +258,37 @@ def run(config: dict, headless: bool = False):
 
                 now = time.time()
 
-                # 角色轮换
-                if now - persona_switched_at >= persona_interval:
-                    persona_idx = (persona_idx + 1) % len(personas)
-                    persona_switched_at = now
-                    print(f"  🔄 角色 → {personas[persona_idx]['name']}")
+                # 单账号模式：固定使用 personas[0]（无角色轮换）
+                current_persona = personas[0]
 
-                current_persona = personas[persona_idx]
-                reply = _get_next_msg(current_persona["name"])
-                if not reply:
-                    continue
+                # ──── M1 决策层 ────
+                if llm_enabled:
+                    # 1) 掷骰子 response_tendency：决定要不要回
+                    tendency = float(current_persona.get("response_tendency", 0.45))
+                    if random.random() > tendency:
+                        continue  # 静默本轮
 
-                print(f"  ⏰ [{personas[persona_idx]['name']}] → {reply}")
+                    # 2) LLM 决策（think 内部失败 → 自动 fallback 到 messages）
+                    decision = think(current_persona, llm_config)
+                    if not decision.get("respond", True):
+                        continue  # LLM 决定不回
+                    reply = decision.get("content", "")
+                    if not reply:
+                        continue
+
+                    # 3) 简单防重复（与 _get_next_msg 行为一致）
+                    if reply == last_reply and len(current_persona.get("messages", [])) > 1:
+                        alt_msgs = [m for m in current_persona["messages"] if m != last_reply]
+                        if alt_msgs:
+                            reply = random.choice(alt_msgs)
+                    last_reply = reply
+                else:
+                    # v2 静态随机（保持原行为）
+                    reply = _get_next_msg(current_persona["name"])
+                    if not reply:
+                        continue
+
+                print(f"  ⏰ [{current_persona['name']}] → {reply}")
 
                 try:
                     el = page.query_selector('[class*="zone-container"]')

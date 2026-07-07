@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>析命师互动控制台 — UI 预览（M1 人格化重构）</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    background: #2b2b2b;
+    padding: 20px;
+    color: #222;
+  }
+  .window {
+    width: 1100px;
+    background: #f0f0f0;
+    border: 1px solid #888;
+    border-radius: 6px;
+    margin: 0 auto 24px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    overflow: hidden;
+  }
+  .titlebar {
+    background: linear-gradient(#3a72c0, #2a5a9e);
+    color: white;
+    padding: 6px 12px;
+    font-size: 13px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .titlebar .controls { font-family: monospace; }
+  .titlebar .controls span {
+    display: inline-block;
+    width: 22px;
+    text-align: center;
+    margin-left: 4px;
+    border-radius: 3px;
+  }
+  .tabs {
+    background: #e0e0e0;
+    border-bottom: 1px solid #aaa;
+    display: flex;
+    padding: 0 8px;
+  }
+  .tab {
+    padding: 8px 18px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    margin-right: 2px;
+    font-size: 13px;
+    color: #444;
+    position: relative;
+    top: 1px;
+  }
+  .tab.active {
+    background: #f0f0f0;
+    border-color: #aaa;
+    color: #000;
+    font-weight: bold;
+  }
+  .tab-content {
+    padding: 14px;
+    min-height: 460px;
+    background: #f0f0f0;
+  }
+  .caption {
+    color: #ccc;
+    text-align: center;
+    font-size: 12px;
+    margin-top: -16px;
+    margin-bottom: 24px;
+    font-family: ui-monospace, monospace;
+  }
+
+  /* ── 通用控件 ── */
+  label.field {
+    display: block;
+    font-size: 12px;
+    color: #333;
+    margin-bottom: 4px;
+  }
+  .field-group {
+    background: #fff;
+    border: 1px solid #c0c0c0;
+    border-radius: 4px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+  }
+  .group-title {
+    font-size: 12px;
+    font-weight: bold;
+    color: #2a5a9e;
+    margin-bottom: 10px;
+    padding-bottom: 4px;
+    border-bottom: 1px dashed #c0c0c0;
+  }
+  .row { display: flex; gap: 14px; margin-bottom: 10px; }
+  .row > div { flex: 1; }
+  select, input[type=text], input[type=password] {
+    width: 100%;
+    padding: 4px 6px;
+    border: 1px solid #a0a0a0;
+    border-radius: 3px;
+    background: white;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  button {
+    padding: 5px 14px;
+    border: 1px solid #a0a0a0;
+    border-radius: 3px;
+    background: linear-gradient(#fafafa, #e0e0e0);
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  button.primary {
+    background: linear-gradient(#4a82d0, #2a5a9e);
+    color: white;
+    border-color: #1a3e7e;
+  }
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .slider-row input[type=range] { flex: 1; }
+  .slider-val {
+    width: 40px;
+    text-align: right;
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    color: #555;
+  }
+
+  /* ── 角色管理 layout ── */
+  .persona-layout {
+    display: flex;
+    gap: 12px;
+    height: 420px;
+  }
+  .persona-list {
+    width: 180px;
+    background: #fff;
+    border: 1px solid #c0c0c0;
+    border-radius: 4px;
+    overflow-y: auto;
+  }
+  .persona-list-item {
+    padding: 7px 10px;
+    cursor: pointer;
+    border-bottom: 1px solid #e8e8e8;
+    font-size: 13px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .persona-list-item:hover { background: #eef4fc; }
+  .persona-list-item.selected {
+    background: #cfe2fc;
+    font-weight: bold;
+  }
+  .badge {
+    background: #4a82d0;
+    color: white;
+    border-radius: 8px;
+    padding: 1px 7px;
+    font-size: 10px;
+    font-family: ui-monospace, monospace;
+  }
+  .badge.dim { background: #aaa; }
+  .persona-detail {
+    flex: 1;
+    background: #fff;
+    border: 1px solid #c0c0c0;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .subtabs {
+    display: flex;
+    background: #f4f4f4;
+    border-bottom: 1px solid #c0c0c0;
+  }
+  .subtab {
+    padding: 7px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    border-right: 1px solid #c0c0c0;
+    color: #444;
+  }
+  .subtab.active {
+    background: #fff;
+    font-weight: bold;
+    color: #000;
+    position: relative;
+    top: 1px;
+    border-bottom: 1px solid #fff;
+  }
+  .subtab-content { padding: 14px; flex: 1; overflow-y: auto; }
+
+  /* ── 弹幕列表 (messages) ── */
+  .msg-list {
+    background: white;
+    border: 1px solid #c0c0c0;
+    border-radius: 4px;
+    height: 240px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+  }
+  .msg-item {
+    padding: 6px 10px;
+    border-bottom: 1px solid #eee;
+    font-size: 13px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .msg-item:hover { background: #f8f8f8; }
+
+  /* ── 直播间互动 (main) ── */
+  .status-led {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 6px;
+    background: #888;
+  }
+  .status-led.on { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
+  .status-led.off { background: #c00; }
+
+  .log {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    font-family: ui-monospace, "Cascadia Code", monospace;
+    font-size: 12px;
+    padding: 8px 10px;
+    border-radius: 4px;
+    height: 200px;
+    overflow-y: auto;
+    line-height: 1.5;
+  }
+  .log .ts { color: #888; }
+  .log .info { color: #6cf; }
+  .log .warn { color: #fc6; }
+  .log .err  { color: #f66; }
+
+  /* ── 弹幕采集 ── */
+  .record-list {
+    background: white;
+    border: 1px solid #c0c0c0;
+    border-radius: 4px;
+    height: 280px;
+    overflow-y: auto;
+  }
+  .record-item {
+    padding: 6px 10px;
+    border-bottom: 1px solid #eee;
+    font-size: 12px;
+    font-family: ui-monospace, monospace;
+  }
+  .record-item .who { color: #06c; }
+  .record-item .what { color: #222; }
+
+  /* ── 决策 trace（人格思维侧栏）── */
+  .think-panel {
+    background: #f8f4e8;
+    border: 1px solid #d8c890;
+    border-radius: 4px;
+    padding: 10px;
+    font-size: 12px;
+    margin-top: 10px;
+  }
+  .think-panel h4 {
+    color: #8a6a20;
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+  .think-panel pre {
+    font-family: ui-monospace, monospace;
+    white-space: pre-wrap;
+    color: #444;
+    line-height: 1.5;
+  }
+  .think-panel .verdict {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed #c8b070;
+    color: #4a3a00;
+    font-weight: bold;
+  }
+
+  /* ── 标 NEW 的标签 ── */
+  .new-tag {
+    background: #e74c3c;
+    color: white;
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!--  Tab 1: 直播间互动 — 新增 LLM 状态行                     -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="window">
+  <div class="titlebar">
+    <span>析命师互动控制台 v2.1 (M1 人格化重构预览)</span>
+    <span class="controls"><span>—</span><span>□</span><span>✕</span></span>
+  </div>
+  <div class="tabs">
+    <div class="tab active">🎥 直播间互动</div>
+    <div class="tab">💬 角色管理</div>
+    <div class="tab">🤖 LLM 配置<span class="new-tag">NEW</span></div>
+    <div class="tab">📝 弹幕采集</div>
+  </div>
+  <div class="tab-content">
+
+    <!-- 账号 + 直播间 -->
+    <div class="field-group">
+      <div class="group-title">账号 & 直播间</div>
+      <div class="row">
+        <div>
+          <label class="field">账号</label>
+          <select><option>麦橘成图</option><option>析命师</option></select>
+        </div>
+        <div>
+          <label class="field">直播间 URL</label>
+          <input type="text" value="https://live.douyin.com/133925994215">
+        </div>
+        <div style="flex: 0 0 90px;">
+          <label class="field">&nbsp;</label>
+          <button>登录</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 发送设置 -->
+    <div class="field-group">
+      <div class="group-title">发送设置</div>
+      <div class="row">
+        <div>
+          <label class="field">发送间隔（秒）</label>
+          <input type="text" value="70">
+        </div>
+        <div>
+          <label class="field">弹幕策略</label>
+          <select>
+            <option>循环</option>
+            <option>随机</option>
+          </select>
+        </div>
+      </div>
+      <div style="font-size: 11px; color: #888; margin-top: 4px;">
+        拟人输入（M3）：已硬编码在代码中，始终启用 · 节奏参数在 humanized_input.py 可调
+      </div>
+    </div>
+
+    <!-- 当前角色 -->
+    <div class="field-group">
+      <div class="group-title">当前启用角色</div>
+      <select>
+        <option>桑蚕丝连衣裙</option>
+        <option>做生意的老张</option>
+        <option>精致妈妈</option>
+        <option>都市中产王姐</option>
+        <option>GenZ小妹</option>
+      </select>
+    </div>
+
+    <!-- 启动控制 -->
+    <div style="margin-bottom: 12px;">
+      <button class="primary">▶ 启动</button>
+      &nbsp; <span class="status-led on"></span> 已连接 · 浏览器已登录 · LLM 已就绪
+    </div>
+
+    <!-- 日志 -->
+    <div class="field-group">
+      <div class="group-title">运行日志</div>
+      <div class="log">
+<span class="ts">22:31:05</span> <span class="info">[INFO]</span> 启动完成 · 21 个角色加载
+<span class="ts">22:31:08</span> [INFO] 已进入直播间 133925994215
+<span class="ts">22:32:12</span> [INFO] 角色轮换 → 桑蚕丝连衣裙
+<span class="ts">22:32:13</span> [INFO] ⏰ [桑蚕丝连衣裙] → 这个颜色正不正啊
+<span class="ts">22:32:15</span> [INFO] M3 拟人输入：13 字 / 2.1s
+<span class="ts">22:32:17</span> [INFO] ✓ 发送成功
+<span class="ts">22:32:20</span> <span class="info">[LLM]</span> think: 主播说"今天最后 50 件" → 回应?=是, content="最后 50 件了？赶紧给家人留一个"
+<span class="ts">22:32:22</span> [INFO] ⏰ [桑蚕丝连衣裙] → 最后 50 件了？赶紧给家人留一个
+<span class="ts">22:32:24</span> [INFO] M3 拟人输入：19 字 / 2.8s
+<span class="ts">22:32:27</span> [INFO] ✓ 发送成功
+      </div>
+    </div>
+
+  </div>
+</div>
+<div class="caption">Tab 1: 直播间互动 — 仅追加 LLM 状态行 / 拟人输入字段，几乎不动</div>
+
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!--  Tab 2: 角色管理 — 拆「设定」+「弹幕」两个子标签       -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="window">
+  <div class="titlebar">
+    <span>析命师互动控制台 v2.1 (M1 人格化重构预览)</span>
+    <span class="controls"><span>—</span><span>□</span><span>✕</span></span>
+  </div>
+  <div class="tabs">
+    <div class="tab">🎥 直播间互动</div>
+    <div class="tab active">💬 角色管理</div>
+    <div class="tab">🤖 LLM 配置<span class="new-tag">NEW</span></div>
+    <div class="tab">📝 弹幕采集</div>
+  </div>
+  <div class="tab-content">
+
+    <div class="persona-layout">
+
+      <!-- 左: 角色列表 -->
+      <div class="persona-list">
+        <div class="persona-list-item selected">
+          桑蚕丝连衣裙 <span class="badge">7</span>
+        </div>
+        <div class="persona-list-item">
+          做生意的老张 <span class="badge">3</span>
+        </div>
+        <div class="persona-list-item">
+          精致妈妈 <span class="badge dim">0</span>
+        </div>
+        <div class="persona-list-item">
+          都市中产王姐 <span class="badge dim">0</span>
+        </div>
+        <div class="persona-list-item">
+          GenZ小妹 <span class="badge dim">0</span>
+        </div>
+        <div class="persona-list-item" style="color:#888;">+ 新建角色</div>
+      </div>
+
+      <!-- 右: 详情 -->
+      <div class="persona-detail">
+        <div class="subtabs">
+          <div class="subtab active">⚙ 设定</div>
+          <div class="subtab">💬 弹幕（7）</div>
+          <div class="subtab">📄 提示词 .md</div>
+        </div>
+
+        <div class="subtab-content">
+
+          <!-- 角色名 + 客户类型 -->
+          <div class="row">
+            <div style="flex: 2;">
+              <label class="field">角色名</label>
+              <input type="text" value="桑蚕丝连衣裙">
+            </div>
+            <div>
+              <label class="field">客户类型</label>
+              <select><option>潜客</option><option>新客</option><option>老客</option></select>
+            </div>
+            <div>
+              <label class="field">打字速度</label>
+              <select><option>中</option><option>慢</option><option>快</option></select>
+            </div>
+          </div>
+
+          <!-- 三栏字段组 -->
+          <div class="row">
+            <!-- 基础画像 -->
+            <div class="field-group" style="flex: 1; margin-bottom: 0;">
+              <div class="group-title">基础画像</div>
+              <label class="field">人群</label>
+              <select><option>都市蓝领</option></select>
+              <label class="field" style="margin-top:8px;">省份</label>
+              <select><option>河南</option></select>
+              <label class="field" style="margin-top:8px;">婚姻</label>
+              <select><option>已婚有娃</option></select>
+            </div>
+
+            <!-- 消费力 -->
+            <div class="field-group" style="flex: 1; margin-bottom: 0;">
+              <div class="group-title">消费力</div>
+              <label class="field">手机价位</label>
+              <select><option>1000-3000 元</option></select>
+              <label class="field" style="margin-top:8px;">车型</label>
+              <select><option>电动车</option></select>
+              <label class="field" style="margin-top:8px;">购物频次</label>
+              <select><option>中</option></select>
+            </div>
+
+            <!-- 表达风格 -->
+            <div class="field-group" style="flex: 1; margin-bottom: 0;">
+              <div class="group-title">表达风格</div>
+              <label class="field">语气</label>
+              <select><option>直白务实</option></select>
+              <label class="field" style="margin-top:8px;">回应率</label>
+              <div class="slider-row">
+                <input type="range" min="0" max="100" value="45">
+                <span class="slider-val">0.45</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 操作按钮 -->
+          <div style="margin-top: 14px;">
+            <button class="primary">💾 保存到 JSON</button>
+            <button>🔄 重置</button>
+            <button>👁 预览拼接的提示词</button>
+          </div>
+
+          <!-- 提示词预览（折叠面板） -->
+          <div class="think-panel">
+            <h4>📜 拼接后的 System Prompt（预览）</h4>
+<pre>你是「桑蚕丝连衣裙」，一名 35-45 岁都市已婚女性顾客。
+
+【人群画像】
+- 八大人群：都市蓝领
+- 省份：河南
+- 婚姻：已婚有娃
+
+【消费力】
+- 手机：1000-3000 元档
+- 车：电动车
+- 购物频次：中
+
+【表达风格】
+- 语气：直白务实
+- 回应率：45%（多数时候保持沉默）
+- 打字速度：中
+
+【客户旅程】
+- 客户类型：潜客（已刷到过类似直播间，正在比价犹豫）
+
+【行为约束】
+- 用短句、不用太多标点
+- 关注价格、性价比
+- 不要主动推荐产品细节</pre>
+            <div class="verdict">⬆ 调用 LLM 时，以上会自动作为 system prompt 发送</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="caption">Tab 2: 角色管理 — 拆三个子标签（设定 / 弹幕 / 提示词 .md），核心改造点</div>
+
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!--  Tab 3: LLM 配置 — 新增整页                            -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="window">
+  <div class="titlebar">
+    <span>析命师互动控制台 v2.1 (M1 人格化重构预览)</span>
+    <span class="controls"><span>—</span><span>□</span><span>✕</span></span>
+  </div>
+  <div class="tabs">
+    <div class="tab">🎥 直播间互动</div>
+    <div class="tab">💬 角色管理</div>
+    <div class="tab active">🤖 LLM 配置<span class="new-tag">NEW</span></div>
+    <div class="tab">📝 弹幕采集</div>
+  </div>
+  <div class="tab-content">
+
+    <div class="field-group">
+      <div class="group-title">LLM 服务</div>
+      <div class="row">
+        <div style="flex: 2;">
+          <label class="field">Provider</label>
+          <select>
+            <option>DeepSeek（推荐）</option>
+            <option>豆包（Doubao）</option>
+            <option>KIMI（Moonshot）</option>
+            <option>MINIMAX</option>
+            <option>MIMO</option>
+            <option>OpenAI</option>
+            <option>自定义（OpenAI 协议）</option>
+          </select>
+        </div>
+        <div>
+          <label class="field">模型</label>
+          <input type="text" value="deepseek-chat" placeholder="手动输入模型名">
+        </div>
+      </div>
+      <div class="row">
+        <div style="flex: 1;">
+          <label class="field">Base URL</label>
+          <input type="text" value="https://api.deepseek.com" placeholder="https://api.xxx.com">
+        </div>
+      </div>
+      <div class="row">
+        <div style="flex: 3;">
+          <label class="field">API Key</label>
+          <input type="password" value="sk-xxxxxxxxxxxxxxxxxxxxxxxx">
+        </div>
+        <div style="flex: 0 0 auto;">
+          <label class="field">&nbsp;</label>
+          <button>显示</button>
+        </div>
+      </div>
+      <div style="font-size: 11px; color: #888; margin-top: 4px;">
+        已测试厂商：DeepSeek / 豆包 / KIMI / MINIMAX / MIMO / OpenAI · 协议：OpenAI 兼容
+      </div>
+    </div>
+
+    <div class="field-group">
+      <div class="group-title">生成参数</div>
+      <div class="row">
+        <div>
+          <label class="field">温度</label>
+          <div class="slider-row">
+            <input type="range" min="0" max="200" value="80">
+            <span class="slider-val">0.80</span>
+          </div>
+        </div>
+        <div>
+          <label class="field">Max Tokens</label>
+          <input type="text" value="128">
+        </div>
+        <div>
+          <label class="field">超时（秒）</label>
+          <input type="text" value="8">
+        </div>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <div class="group-title">人格思维开关</div>
+      <div style="font-size: 13px; line-height: 1.8;">
+        ☑ 启用 LLM 决策（关闭则降级到静态 messages 随机抽取）<br>
+        ☑ 决策后再生成内容（关闭则 LLM 只判断回不回，内容走 messages）<br>
+        ☑ 失败自动降级（LLM 超时/报错 → 自动走 messages 兜底）
+      </div>
+    </div>
+
+    <div style="margin-bottom: 12px;">
+      <button class="primary">🔌 测试连接</button>
+      &nbsp; <span class="status-led on"></span> 连接成功 · 模型列表正常
+    </div>
+
+    <div class="field-group">
+      <div class="group-title">本次启动统计</div>
+      <div style="font-size: 13px; line-height: 1.8;">
+        LLM 调用次数：<b>23</b> &nbsp;·&nbsp;
+        平均延迟：<b>820 ms</b> &nbsp;·&nbsp;
+        超时降级：<b>2</b> &nbsp;·&nbsp;
+        预计成本：<b>¥0.04</b>
+      </div>
+    </div>
+
+  </div>
+</div>
+<div class="caption">Tab 3: LLM 配置 — 新增整页，含服务、参数、开关、统计</div>
+
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<!--  Tab 4: 弹幕采集 — 基本不变                            -->
+<!-- ═══════════════════════════════════════════════════════ -->
+<div class="window">
+  <div class="titlebar">
+    <span>析命师互动控制台 v2.1 (M1 人格化重构预览)</span>
+    <span class="controls"><span>—</span><span>□</span><span>✕</span></span>
+  </div>
+  <div class="tabs">
+    <div class="tab">🎥 直播间互动</div>
+    <div class="tab">💬 角色管理</div>
+    <div class="tab">🤖 LLM 配置<span class="new-tag">NEW</span></div>
+    <div class="tab active">📝 弹幕采集</div>
+  </div>
+  <div class="tab-content">
+    <div class="row">
+      <div style="flex: 0 0 auto;">
+        <button class="primary">● 开始录制</button>
+        <button>⏸ 暂停</button>
+        <button>💾 保存</button>
+      </div>
+      <div style="flex: 1; text-align: right; color: #555; font-size: 12px; align-self: center;">
+        已录制 18 分钟 / 共 234 条弹幕
+      </div>
+    </div>
+    <div class="record-list" style="margin-top: 12px;">
+      <div class="record-item"><span class="ts">[22:14:05]</span> <span class="who">小美</span>: <span class="what">这个颜色还有吗</span></div>
+      <div class="record-item"><span class="ts">[22:14:12]</span> <span class="who">阿伟</span>: <span class="what">多少钱一件</span></div>
+      <div class="record-item"><span class="ts">[22:14:18]</span> <span class="who">姐姐驾到</span>: <span class="what">S 码还有吗</span></div>
+      <div class="record-item"><span class="ts">[22:14:25]</span> <span class="who">老粉</span>: <span class="what">主播穿的是 M 码吧</span></div>
+      <div class="record-item"><span class="ts">[22:14:33]</span> <span class="who">观望中</span>: <span class="what">怕踩雷，等评论区反馈</span></div>
+      <div class="record-item"><span class="ts">[22:14:40]</span> <span class="who">已下单</span>: <span class="what">3 号链接拍了</span></div>
+    </div>
+    <div style="margin-top: 10px; font-size: 12px; color: #555;">
+      此 tab 在 M1 不动。后续 v3 可接入 LLM 自动解析（"已下单"→ 潜客/老客标签），
+      但 M1 阶段保持 v2 原样。
+    </div>
+  </div>
+</div>
+<div class="caption">Tab 4: 弹幕采集 — M1 阶段不动</div>
+
+
+<div style="text-align: center; color: #888; font-size: 12px; margin: 30px 0;">
+  以上为 M1 人格化重构的 UI 预览。文件路径：<code>_ui_preview.html</code>，浏览器打开即可。
+</div>
+
+</body>
+</html>

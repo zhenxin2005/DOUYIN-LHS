@@ -36,17 +36,37 @@ if errorlevel 1 (
     goto :eof
 )
 
-:: 复制 Chromium 浏览器
+:: 复制 Chromium 浏览器(动态查路径,不依赖版本号)
 python -c "
-import shutil
+import shutil, sys
 from pathlib import Path
+from playwright.sync_api import sync_playwright
 
-chrome_src = Path(r'C:\Users\zhenx\AppData\Local\ms-playwright\chromium-1223\chrome-win64')
-dst = Path('output/Launcher/_internal/playwright_browsers/chromium')
-dst.parent.mkdir(parents=True, exist_ok=True)
-shutil.copytree(str(chrome_src), str(dst), dirs_exist_ok=True)
-print('Chromium OK')
+try:
+    with sync_playwright() as p:
+        chrome_exe = Path(p.chromium.executable_path)
+        chrome_dir = chrome_exe.parent
+        # build_id 目录(如 chromium-1223),launcher.py 通过 PLAYWRIGHT_BROWSERS_PATH 自动找到
+        build_dir = chrome_dir.parent
+        build_name = build_dir.name
+        # 目标: output/Launcher/_internal/playwright_browsers/<build_name>/
+        dst = Path('output/Launcher/_internal/playwright_browsers') / build_name
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(str(build_dir), str(dst), dirs_exist_ok=True)
+        print(f'Chromium OK: {build_name} -> {dst}')
+except Exception as e:
+    print(f'Chromium 复制失败: {e}')
+    print('请先运行: playwright install chromium')
+    sys.exit(1)
 "
+if errorlevel 1 (
+    echo.
+    echo ======================================
+    echo   打包失败！Chromium 没复制成功
+    echo ======================================
+    pause
+    goto :eof
+)
 
 :: 重命名为中文文件夹名
 python -c "

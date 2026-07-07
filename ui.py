@@ -28,6 +28,27 @@ except Exception:
 
 CONFIG_FILE = APP_DIR / "config.json"
 RULES_FILE = APP_DIR / "rules.json"
+PERSONAS_DIR = APP_DIR / "personas"
+PERSONAS_DIR.mkdir(exist_ok=True)
+
+# M1 角色设定下拉选项常量
+CROWD_OPTIONS = ["小镇中老年", "都市银发族", "都市蓝领", "精致妈妈",
+                  "都市中产", "Gen Z", "都市白领", "小镇青年"]
+DEVICE_OPTIONS = ["8000+", "5000-8000", "3000-5000", "1000-3000", "1000以下"]
+VEHICLE_OPTIONS = ["30万+ BBA", "10-30万合资", "5-10万国产", "电动车", "无车"]
+PURCHASE_FREQ_OPTIONS = ["高", "中", "低"]
+PROVINCE_OPTIONS = ["北京", "上海", "天津", "重庆", "河北", "山西", "内蒙古",
+                    "辽宁", "吉林", "黑龙江", "江苏", "浙江", "安徽", "福建",
+                    "江西", "山东", "河南", "湖北", "湖南", "广东", "广西",
+                    "海南", "四川", "贵州", "云南", "西藏", "陕西", "甘肃",
+                    "青海", "宁夏", "新疆", "台湾", "香港", "澳门"]
+MARRIAGE_OPTIONS = ["已婚有娃", "已婚无娃", "未婚", "离异", "丧偶"]
+CUSTOMER_TYPE_OPTIONS = ["新客", "潜客", "老客"]
+TYPING_STYLE_OPTIONS = ["慢", "中", "快"]
+TONE_OPTIONS = ["直白务实", "朴实信祈", "得体理性", "玩梗好奇", "温和亲切", "怀疑谨慎"]
+
+# M1 旧 schema 字段（保留向后兼容，但 UI 不再显示）
+OLD_SCHEMA_FIELDS = ("tone", "trait", "style")
 
 # 首次运行：从 bundle 复制默认配置到运行目录
 if getattr(sys, 'frozen', False):
@@ -95,14 +116,17 @@ class App:
 
         self._tab_main = ttk.Frame(self.notebook)
         self._tab_rules = ttk.Frame(self.notebook)
+        self._tab_llm = ttk.Frame(self.notebook)
         self._tab_record = ttk.Frame(self.notebook)
 
         self.notebook.add(self._tab_main, text="🎥 直播间互动")
         self.notebook.add(self._tab_rules, text="💬 角色弹幕")
+        self.notebook.add(self._tab_llm, text="🤖 LLM 配置")
         self.notebook.add(self._tab_record, text="📝 弹幕采集")
 
         self._build_tab_main()
         self._build_tab_rules()
+        self._build_tab_llm()
         self._build_tab_record()
 
         # 底部状态栏
@@ -149,7 +173,7 @@ class App:
         self.room_url.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
         self.room_url.bind("<FocusOut>", lambda e: self._save_config_from_form())
 
-        # ── 间隔 ──
+        # ── 发送设置 ──
         intv_frame = ttk.LabelFrame(frame, text="发送设置", padding=8)
         intv_frame.pack(fill=tk.X, pady=4)
 
@@ -161,35 +185,24 @@ class App:
         self.send_interval.insert(0, "45")
         self.send_interval.bind("<FocusOut>", lambda e: self._save_config_from_form())
         ttk.Label(r2, text="秒", foreground="gray").pack(side=tk.LEFT)
-        ttk.Label(r2, text="  角色轮换间隔：").pack(side=tk.LEFT, padx=(16, 0))
-        self.rotate_interval = ttk.Entry(r2, width=8)
-        self.rotate_interval.pack(side=tk.LEFT, padx=4)
-        self.rotate_interval.insert(0, "300")
-        self.rotate_interval.bind("<FocusOut>", lambda e: self._save_config_from_form())
-        ttk.Label(r2, text="秒", foreground="gray").pack(side=tk.LEFT)
 
-        # ── 角色选择 ──
-        role_frame = ttk.LabelFrame(frame, text="角色选择（Ctrl+点击多选）", padding=8)
+        ttk.Label(r2, text="  弹幕策略：").pack(side=tk.LEFT, padx=(16, 0))
+        self.bullet_strategy = ttk.Combobox(r2, state="readonly", width=10,
+                                            values=["循环", "随机"])
+        self.bullet_strategy.set("随机")
+        self.bullet_strategy.pack(side=tk.LEFT, padx=4)
+        self.bullet_strategy.bind("<<ComboboxSelected>>", lambda e: self._save_config_from_form())
+
+        # ── 角色选择（单选下拉）──
+        role_frame = ttk.LabelFrame(frame, text="当前角色", padding=8)
         role_frame.pack(fill=tk.X, pady=4)
 
-        list_inner = ttk.Frame(role_frame)
-        list_inner.pack(fill=tk.X)
-        self.role_list = tk.Listbox(list_inner, selectmode=tk.MULTIPLE,
-                                     height=6, exportselection=False,
-                                     font=("Microsoft YaHei", 9))
-        role_scroll = ttk.Scrollbar(list_inner, orient=tk.VERTICAL,
-                                     command=self.role_list.yview)
-        self.role_list.configure(yscrollcommand=role_scroll.set)
-        self.role_list.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        role_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-        for name in get_persona_names():
-            self.role_list.insert(tk.END, name)
-        self.role_list.bind("<<ListboxSelect>>", lambda e: self._save_config_from_form())
-
-        btn_rf = ttk.Frame(role_frame)
-        btn_rf.pack(fill=tk.X, pady=(4, 0))
-        ttk.Button(btn_rf, text="全选", command=lambda: (self.role_list.select_set(0, tk.END), self._save_config_from_form())).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_rf, text="取消全选", command=lambda: (self.role_list.selection_clear(0, tk.END), self._save_config_from_form())).pack(side=tk.LEFT, padx=2)
+        r3 = ttk.Frame(role_frame)
+        r3.pack(fill=tk.X)
+        self.persona_combo = ttk.Combobox(r3, state="readonly", width=24)
+        self.persona_combo.pack(side=tk.LEFT, padx=4)
+        self.persona_combo["values"] = get_persona_names()
+        self.persona_combo.bind("<<ComboboxSelected>>", lambda e: self._save_config_from_form())
 
         # ── 控制 ──
         ctrl_frame = ttk.Frame(frame)
@@ -222,14 +235,12 @@ class App:
         self.room_url.insert(0, cfg.get("room_url", ""))
         self.send_interval.delete(0, tk.END)
         self.send_interval.insert(0, str(cfg.get("send_interval", 45)))
-        self.rotate_interval.delete(0, tk.END)
-        self.rotate_interval.insert(0, str(cfg.get("rotate_interval", 300)))
+        self.bullet_strategy.set(cfg.get("bullet_strategy", "随机"))
 
-        personas = set(cfg.get("personas", []))
-        self.role_list.selection_clear(0, tk.END)
-        for i in range(self.role_list.size()):
-            if self.role_list.get(i) in personas:
-                self.role_list.selection_set(i)
+        # 单选下拉：取 personas 列表的第一项作为当前角色
+        personas = cfg.get("personas", [])
+        if personas:
+            self.persona_combo.set(personas[0])
 
         # 加载账号(刷新下拉框后再设置)
         self._refresh_account_combo()
@@ -237,28 +248,216 @@ class App:
         if saved_account and saved_account in self.account_combo["values"]:
             self.account_combo.set(saved_account)
 
+        # LLM 配置（如果 GUI 已构建）
+        if hasattr(self, "llm_api_key"):
+            self.llm_api_key.delete(0, tk.END)
+            self.llm_api_key.insert(0, cfg.get("llm_api_key", ""))
+            self.llm_base_url.delete(0, tk.END)
+            self.llm_base_url.insert(0, cfg.get("llm_base_url", "https://api.deepseek.com"))
+            self.llm_model.delete(0, tk.END)
+            self.llm_model.insert(0, cfg.get("llm_model", "deepseek-chat"))
+            try:
+                self.llm_temperature.set(int(float(cfg.get("llm_temperature", 0.8)) * 100))
+                self._on_llm_temp_change(str(self.llm_temperature.get()))
+            except Exception:
+                pass
+            self.llm_mode.set(cfg.get("llm_mode", "pick"))
+            try:
+                self.llm_timeout.delete(0, tk.END)
+                self.llm_timeout.insert(0, str(cfg.get("llm_timeout", 8)))
+            except Exception:
+                pass
+            self.llm_enabled_var.set(bool(cfg.get("llm_enabled", False)))
+
     def _save_config_from_form(self):
         """从表单保存到 config.json"""
-        selected = [self.role_list.get(i) for i in self.role_list.curselection()]
-        if not selected:
-            selected = get_persona_names()
+        selected_persona = self.persona_combo.get().strip()
+        if not selected_persona:
+            selected_persona = get_persona_names()[0] if get_persona_names() else ""
         try:
             si = int(self.send_interval.get())
         except ValueError:
             si = 45
-        try:
-            ri = int(self.rotate_interval.get())
-        except ValueError:
-            ri = 300
 
         cfg = {
             "room_url": self.room_url.get().strip(),
-            "personas": selected,
+            "personas": [selected_persona] if selected_persona else [],
             "send_interval": si,
-            "rotate_interval": ri,
+            "bullet_strategy": self.bullet_strategy.get() or "随机",
             "account": self.account_combo.get(),
         }
+
+        # LLM 配置（如果 GUI 已构建）
+        if hasattr(self, "llm_api_key"):
+            try:
+                timeout_val = float(self.llm_timeout.get())
+            except ValueError:
+                timeout_val = 8.0
+            cfg["llm_enabled"] = bool(self.llm_enabled_var.get())
+            cfg["llm_api_key"] = self.llm_api_key.get().strip()
+            cfg["llm_base_url"] = self.llm_base_url.get().strip() or "https://api.deepseek.com"
+            cfg["llm_model"] = self.llm_model.get().strip() or "deepseek-chat"
+            cfg["llm_temperature"] = round(int(self.llm_temperature.get()) / 100, 2)
+            cfg["llm_mode"] = self.llm_mode.get() or "pick"
+            cfg["llm_timeout"] = timeout_val
+
         save_config(cfg)
+
+    # ════════════════════════════════════════════════
+    #  Tab 3: LLM 配置（M1）
+    # ════════════════════════════════════════════════
+
+    # 已测试厂商 / 协议
+    LLM_PROVIDERS = [
+        "DeepSeek（推荐）",
+        "豆包（Doubao）",
+        "KIMI（Moonshot）",
+        "MINIMAX",
+        "MIMO",
+        "OpenAI",
+        "自定义（OpenAI 协议）",
+    ]
+
+    def _build_tab_llm(self):
+        """🤖 LLM 配置 子标签：API Key + 模型 + 参数 + 测试连接"""
+        frame = ttk.Frame(self._tab_llm, padding=12)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        # ── 启用开关 ──
+        enable_row = ttk.Frame(frame)
+        enable_row.pack(fill=tk.X, pady=(0, 8))
+        self.llm_enabled_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(enable_row, text="启用 LLM 决策（关闭时走 v2 静态模式）",
+                        variable=self.llm_enabled_var,
+                        command=self._save_config_from_form).pack(side=tk.LEFT)
+
+        # ── 服务配置 ──
+        svc = ttk.LabelFrame(frame, text="LLM 服务", padding=8)
+        svc.pack(fill=tk.X, pady=4)
+
+        r1 = ttk.Frame(svc)
+        r1.pack(fill=tk.X, pady=2)
+        ttk.Label(r1, text="Provider：", width=12).pack(side=tk.LEFT)
+        self.llm_provider = ttk.Combobox(r1, values=self.LLM_PROVIDERS,
+                                          state="readonly", width=24)
+        self.llm_provider.set("DeepSeek（推荐）")
+        self.llm_provider.pack(side=tk.LEFT, padx=4)
+        ttk.Label(r1, text="模型：", width=8).pack(side=tk.LEFT, padx=(16, 0))
+        self.llm_model = ttk.Entry(r1, width=24)
+        self.llm_model.insert(0, "deepseek-chat")
+        self.llm_model.pack(side=tk.LEFT, padx=4)
+        self.llm_model.bind("<FocusOut>", lambda e: self._save_config_from_form())
+
+        r2 = ttk.Frame(svc)
+        r2.pack(fill=tk.X, pady=2)
+        ttk.Label(r2, text="Base URL：", width=12).pack(side=tk.LEFT)
+        self.llm_base_url = ttk.Entry(r2)
+        self.llm_base_url.insert(0, "https://api.deepseek.com")
+        self.llm_base_url.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
+        self.llm_base_url.bind("<FocusOut>", lambda e: self._save_config_from_form())
+
+        r3 = ttk.Frame(svc)
+        r3.pack(fill=tk.X, pady=2)
+        ttk.Label(r3, text="API Key：", width=12).pack(side=tk.LEFT)
+        self.llm_api_key = ttk.Entry(r3, show="*")
+        self.llm_api_key.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
+        self.llm_api_key.bind("<FocusOut>", lambda e: self._save_config_from_form())
+        self.llm_show_key = tk.BooleanVar(value=False)
+        ttk.Checkbutton(r3, text="显示", variable=self.llm_show_key,
+                        command=self._toggle_api_key_visibility).pack(side=tk.LEFT, padx=4)
+
+        ttk.Label(svc, text="已测试厂商：DeepSeek / 豆包 / KIMI / MINIMAX / MIMO / OpenAI · 协议：OpenAI 兼容",
+                  foreground="gray", font=("Microsoft YaHei", 8)).pack(anchor=tk.W, pady=(4, 0))
+
+        # ── 生成参数 ──
+        param = ttk.LabelFrame(frame, text="生成参数", padding=8)
+        param.pack(fill=tk.X, pady=4)
+
+        r4 = ttk.Frame(param)
+        r4.pack(fill=tk.X, pady=2)
+        ttk.Label(r4, text="温度：", width=12).pack(side=tk.LEFT)
+        self.llm_temperature = tk.Scale(r4, from_=0, to=200, orient=tk.HORIZONTAL,
+                                         showvalue=False, command=self._on_llm_temp_change)
+        self.llm_temperature.set(80)
+        self.llm_temperature.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.llm_temp_label = ttk.Label(r4, text="0.80", width=5)
+        self.llm_temp_label.pack(side=tk.LEFT, padx=(6, 0))
+
+        r5 = ttk.Frame(param)
+        r5.pack(fill=tk.X, pady=2)
+        ttk.Label(r5, text="超时（秒）：", width=12).pack(side=tk.LEFT)
+        self.llm_timeout = ttk.Entry(r5, width=8)
+        self.llm_timeout.insert(0, "8")
+        self.llm_timeout.pack(side=tk.LEFT, padx=4)
+        self.llm_timeout.bind("<FocusOut>", lambda e: self._save_config_from_form())
+
+        r6 = ttk.Frame(param)
+        r6.pack(fill=tk.X, pady=2)
+        ttk.Label(r6, text="模式：", width=12).pack(side=tk.LEFT)
+        self.llm_mode = ttk.Combobox(r6, values=["pick", "generate"], state="readonly", width=10)
+        self.llm_mode.set("pick")
+        self.llm_mode.pack(side=tk.LEFT, padx=4)
+        self.llm_mode.bind("<<ComboboxSelected>>", lambda e: self._save_config_from_form())
+        ttk.Label(r6, text="（pick=从 messages 池挑，generate=LLM 自创）",
+                  foreground="gray", font=("Microsoft YaHei", 8)).pack(side=tk.LEFT, padx=8)
+
+        # ── 测试连接 ──
+        test_row = ttk.Frame(frame)
+        test_row.pack(fill=tk.X, pady=8)
+        ttk.Button(test_row, text="🔌 测试连接",
+                   command=self._test_llm_connection).pack(side=tk.LEFT, padx=2)
+        self.llm_test_status = tk.Label(test_row, text="（未测试）",
+                                         fg="gray", font=("Microsoft YaHei", 9))
+        self.llm_test_status.pack(side=tk.LEFT, padx=12)
+
+        # ── 提示 ──
+        ttk.Label(frame, text="💡 提示：测试连接会发起一次真实 LLM 调用，"
+                            "会有 1~2 秒延迟。\n关闭启用后，引擎自动走 v2 静态模式，"
+                            "无需修改其他配置。",
+                  foreground="gray", font=("Microsoft YaHei", 8),
+                  justify=tk.LEFT).pack(anchor=tk.W, pady=(8, 0))
+
+    def _toggle_api_key_visibility(self):
+        self.llm_api_key.config(show="" if self.llm_show_key.get() else "*")
+
+    def _on_llm_temp_change(self, val):
+        try:
+            self.llm_temp_label.config(text=f"{int(val)/100:.2f}")
+        except Exception:
+            pass
+
+    def _test_llm_connection(self):
+        """测试 LLM 连接 + 一次真实调用"""
+        api_key = self.llm_api_key.get().strip()
+        base_url = self.llm_base_url.get().strip() or "https://api.deepseek.com"
+        model = self.llm_model.get().strip() or "deepseek-chat"
+
+        if not api_key:
+            self.llm_test_status.config(text="❌ API Key 为空", fg="red")
+            return
+
+        self.llm_test_status.config(text="⏳ 测试中...", fg="blue")
+        self.root.update_idletasks()
+
+        try:
+            from llm_engine import PERSONAS, think
+            cfg = {
+                "llm_api_key": api_key,
+                "llm_base_url": base_url,
+                "llm_model": model,
+                "llm_temperature": 0.5,
+                "llm_timeout": 10,
+            }
+            p = PERSONAS[0]
+            result = think(p, cfg)
+            content = result.get("content", "")
+            masked_key = api_key[:4] + "***" + api_key[-4:] if len(api_key) > 8 else "***"
+            self.llm_test_status.config(
+                text=f"✓ {model} | 内容: {content[:20]} | key={masked_key}", fg="green")
+            self.log(f"🔌 LLM 测试成功: {model} → {content}")
+        except Exception as e:
+            self.llm_test_status.config(text=f"❌ 失败: {e}", fg="red")
+            self.log(f"❌ LLM 测试失败: {e}")
 
     # ── 操作按钮 ──
 
@@ -490,6 +689,7 @@ class App:
             self.btn_stop.config(state=tk.DISABLED)
 
     def _build_tab_rules(self):
+        """Tab 2: 角色管理（M1 重做：拆三个子标签 ⚙ 设定 / 💬 弹幕 / 📄 提示词）"""
         frame = ttk.Frame(self._tab_rules, padding=12)
         frame.pack(fill=tk.BOTH, expand=True)
 
@@ -503,21 +703,114 @@ class App:
         ttk.Label(import_row, text="(每行一条弹幕;或 用户名:弹幕)",
                   foreground="gray", font=("Microsoft YaHei", 8)).pack(side=tk.LEFT, padx=8)
 
-        # 角色选择
+        # 角色选择 + 新增/删除按钮
         r1 = ttk.Frame(frame)
         r1.pack(fill=tk.X, pady=4)
-        ttk.Label(r1, text="选择角色：", width=10).pack(side=tk.LEFT)
-        self.persona_combo = ttk.Combobox(r1, values=get_persona_names(), state="readonly", width=20)
+        ttk.Label(r1, text="当前角色：").pack(side=tk.LEFT)
+        self.persona_combo = ttk.Combobox(r1, values=get_persona_names(), state="readonly", width=24)
         self.persona_combo.pack(side=tk.LEFT, padx=4)
         self.persona_combo.bind("<<ComboboxSelected>>", self._on_persona_select)
         if get_persona_names():
             self.persona_combo.current(0)
+        ttk.Button(r1, text="👤 ➕ 新角色", command=self._add_persona).pack(side=tk.LEFT, padx=2)
+        ttk.Button(r1, text="👤 🗑 删角色", command=self._delete_persona).pack(side=tk.LEFT, padx=2)
 
-        # 弹幕列表
-        ttk.Label(frame, text="该角色的弹幕内容：", font=("Microsoft YaHei", 9, "bold")).pack(anchor=tk.W, pady=(8, 2))
-        list_frame = ttk.Frame(frame)
+        # ── 子标签 Notebook ──
+        sub_nb = ttk.Notebook(frame)
+        sub_nb.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
+
+        self._tab_sub_settings = ttk.Frame(sub_nb, padding=8)
+        self._tab_sub_messages = ttk.Frame(sub_nb, padding=8)
+        self._tab_sub_prompt = ttk.Frame(sub_nb, padding=8)
+
+        sub_nb.add(self._tab_sub_settings, text="⚙ 设定")
+        sub_nb.add(self._tab_sub_messages, text="💬 弹幕")
+        sub_nb.add(self._tab_sub_prompt, text="📄 提示词")
+
+        self._build_subtab_settings()
+        self._build_subtab_messages()
+        self._build_subtab_prompt()
+
+        self._load_messages_from_code()
+
+    def _build_subtab_settings(self):
+        """⚙ 设定 子标签：10 字段选择器 + 滑块 + 保存"""
+        f = self._tab_sub_settings
+
+        top = ttk.Frame(f)
+        top.pack(fill=tk.X, pady=(0, 8))
+        ttk.Label(top, text="客户类型：").pack(side=tk.LEFT)
+        self.set_customer_type = ttk.Combobox(top, values=CUSTOMER_TYPE_OPTIONS,
+                                               state="readonly", width=10)
+        self.set_customer_type.set("潜客")
+        self.set_customer_type.pack(side=tk.LEFT, padx=(4, 16))
+        ttk.Label(top, text="打字速度：").pack(side=tk.LEFT)
+        self.set_typing_style = ttk.Combobox(top, values=TYPING_STYLE_OPTIONS,
+                                              state="readonly", width=6)
+        self.set_typing_style.set("中")
+        self.set_typing_style.pack(side=tk.LEFT, padx=4)
+        self.settings_status = tk.Label(top, text="", fg="gray", font=("Microsoft YaHei", 9))
+        self.settings_status.pack(side=tk.RIGHT)
+
+        # 三栏字段组
+        cols = ttk.Frame(f)
+        cols.pack(fill=tk.BOTH, expand=True)
+
+        # 基础画像
+        c1 = ttk.LabelFrame(cols, text="基础画像", padding=8)
+        c1.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 4))
+        ttk.Label(c1, text="人群").pack(anchor=tk.W)
+        self.set_crowd = ttk.Combobox(c1, values=CROWD_OPTIONS, state="readonly")
+        self.set_crowd.set("都市中产"); self.set_crowd.pack(fill=tk.X, pady=(2, 6))
+        ttk.Label(c1, text="省份").pack(anchor=tk.W)
+        self.set_region = ttk.Combobox(c1, values=PROVINCE_OPTIONS, state="readonly")
+        self.set_region.set("广东"); self.set_region.pack(fill=tk.X, pady=(2, 6))
+        ttk.Label(c1, text="婚姻").pack(anchor=tk.W)
+        self.set_marriage = ttk.Combobox(c1, values=MARRIAGE_OPTIONS, state="readonly")
+        self.set_marriage.set("已婚有娃"); self.set_marriage.pack(fill=tk.X, pady=(2, 6))
+
+        # 消费力
+        c2 = ttk.LabelFrame(cols, text="消费力", padding=8)
+        c2.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=4)
+        ttk.Label(c2, text="手机价位").pack(anchor=tk.W)
+        self.set_device = ttk.Combobox(c2, values=DEVICE_OPTIONS, state="readonly")
+        self.set_device.set("3000-5000"); self.set_device.pack(fill=tk.X, pady=(2, 6))
+        ttk.Label(c2, text="车型").pack(anchor=tk.W)
+        self.set_vehicle = ttk.Combobox(c2, values=VEHICLE_OPTIONS, state="readonly")
+        self.set_vehicle.set("无车"); self.set_vehicle.pack(fill=tk.X, pady=(2, 6))
+        ttk.Label(c2, text="购物频次").pack(anchor=tk.W)
+        self.set_purchase_freq = ttk.Combobox(c2, values=PURCHASE_FREQ_OPTIONS, state="readonly")
+        self.set_purchase_freq.set("中"); self.set_purchase_freq.pack(fill=tk.X, pady=(2, 6))
+
+        # 表达风格
+        c3 = ttk.LabelFrame(cols, text="表达风格", padding=8)
+        c3.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(4, 0))
+        ttk.Label(c3, text="语气").pack(anchor=tk.W)
+        self.set_tone = ttk.Combobox(c3, values=TONE_OPTIONS, state="readonly")
+        self.set_tone.set("直白务实"); self.set_tone.pack(fill=tk.X, pady=(2, 6))
+        ttk.Label(c3, text="回应率（0=静默，1=必回）").pack(anchor=tk.W)
+        slider_row = ttk.Frame(c3)
+        slider_row.pack(fill=tk.X, pady=(2, 6))
+        self.set_response_tendency = tk.Scale(slider_row, from_=0, to=100, orient=tk.HORIZONTAL,
+                                              showvalue=False, command=self._on_slider_change)
+        self.set_response_tendency.set(45)
+        self.set_response_tendency.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.response_tendency_label = ttk.Label(slider_row, text="0.45", width=5)
+        self.response_tendency_label.pack(side=tk.LEFT, padx=(6, 0))
+
+        # 底部按钮
+        btn_row = ttk.Frame(f)
+        btn_row.pack(fill=tk.X, pady=(8, 0))
+        ttk.Button(btn_row, text="💾 保存到 JSON", command=self._save_settings).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_row, text="👁 预览拼接提示词", command=self._preview_system_prompt).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_row, text="🔄 重新加载", command=self._load_settings).pack(side=tk.LEFT, padx=2)
+
+    def _build_subtab_messages(self):
+        """💬 弹幕 子标签：原有 messages 编辑"""
+        f = self._tab_sub_messages
+        ttk.Label(f, text="该角色的弹幕内容：", font=("Microsoft YaHei", 9, "bold")).pack(anchor=tk.W, pady=(0, 2))
+        list_frame = ttk.Frame(f)
         list_frame.pack(fill=tk.BOTH, expand=True)
-
         self.msg_listbox = tk.Listbox(list_frame, height=12, font=("Microsoft YaHei", 10),
                                        selectmode=tk.SINGLE, bg="#fafafa")
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=self.msg_listbox.yview)
@@ -525,29 +818,177 @@ class App:
         self.msg_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # 编辑区
-        edit_frame = ttk.LabelFrame(frame, text="编辑弹幕", padding=8)
+        edit_frame = ttk.LabelFrame(f, text="编辑弹幕", padding=8)
         edit_frame.pack(fill=tk.X, pady=6)
-
         r2 = ttk.Frame(edit_frame)
         r2.pack(fill=tk.X)
-        ttk.Label(r2, text="弹幕内容：", width=10).pack(side=tk.LEFT)
+        ttk.Label(r2, text="弹幕内容：").pack(side=tk.LEFT)
         self.msg_entry = ttk.Entry(r2)
         self.msg_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
-
         btn_row = ttk.Frame(edit_frame)
         btn_row.pack(fill=tk.X, pady=4)
         ttk.Button(btn_row, text="➕ 添加弹幕", command=self._add_message).pack(side=tk.LEFT, padx=2)
         ttk.Button(btn_row, text="✏️ 更新", command=self._update_message).pack(side=tk.LEFT, padx=2)
         ttk.Button(btn_row, text="🗑️ 删除", command=self._delete_message).pack(side=tk.LEFT, padx=2)
-        ttk.Button(btn_row, text="👤 ➕新角色", command=self._add_persona).pack(side=tk.RIGHT, padx=2)
-        ttk.Button(btn_row, text="👤 🗑删角色", command=self._delete_persona).pack(side=tk.RIGHT, padx=2)
-
         self.msg_listbox.bind("<<ListboxSelect>>", self._on_msg_select)
-        self._load_messages_from_code()
+
+    def _build_subtab_prompt(self):
+        """📄 提示词 子标签：personas/<name>.md 编辑"""
+        f = self._tab_sub_prompt
+        info = ttk.Label(f, text="高级覆盖：直接编辑当前角色的 system prompt 补充段（保存到 personas/<角色名>.md）。\n"
+                            "留空则用自动拼接的模板。",
+                          foreground="gray", font=("Microsoft YaHei", 8), justify=tk.LEFT)
+        info.pack(anchor=tk.W, pady=(0, 6))
+        self.prompt_text = scrolledtext.ScrolledText(f, height=14, font=("Microsoft YaHei", 9),
+                                                     wrap=tk.WORD)
+        self.prompt_text.pack(fill=tk.BOTH, expand=True)
+        btn_row = ttk.Frame(f)
+        btn_row.pack(fill=tk.X, pady=(6, 0))
+        ttk.Button(btn_row, text="💾 保存提示词", command=self._save_prompt_md).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_row, text="🔄 重新加载", command=self._load_prompt_md).pack(side=tk.LEFT, padx=2)
+        ttk.Button(btn_row, text="🗑 删除 .md（用自动模板）", command=self._delete_prompt_md).pack(side=tk.LEFT, padx=2)
+
+    # ── 设定子标签：保存/加载/预览 ──
+
+    def _on_slider_change(self, val):
+        try:
+            self.response_tendency_label.config(text=f"{int(val)/100:.2f}")
+        except Exception:
+            pass
+
+    def _save_settings(self):
+        name = self.persona_combo.get()
+        if not name:
+            messagebox.showwarning("提示", "请先选择角色")
+            return
+        data = self._load_persona_data()
+        if name not in data or not isinstance(data[name], dict):
+            data[name] = {}
+        old = data[name]
+        # 保留旧字段
+        old["tone"] = old.get("tone", "")
+        old["trait"] = old.get("trait", "")
+        old["style"] = old.get("style", "")
+        old["messages"] = old.get("messages", [])
+        # 写入 9 个新字段
+        old["crowd"] = self.set_crowd.get()
+        old["device"] = self.set_device.get()
+        old["vehicle"] = self.set_vehicle.get()
+        old["purchase_freq"] = self.set_purchase_freq.get()
+        old["region"] = self.set_region.get()
+        old["marriage"] = self.set_marriage.get()
+        old["customer_type"] = self.set_customer_type.get()
+        old["typing_style"] = self.set_typing_style.get()
+        old["response_tendency"] = round(int(self.set_response_tendency.get()) / 100, 2)
+        data[name] = old
+        self._save_persona_data(data)
+        self._refresh_personas_after_edit()
+        self.settings_status.config(text=f"✓ 已保存 {name}", fg="green")
+        self.log(f"⚙ 已保存设定: [{name}] {old['customer_type']} / {old['crowd']}")
+
+    def _load_settings(self):
+        name = self.persona_combo.get()
+        if not name:
+            return
+        data = self._load_persona_data()
+        p = data.get(name, {})
+        if not isinstance(p, dict):
+            return
+        self.set_crowd.set(p.get("crowd", "都市中产"))
+        self.set_device.set(p.get("device", "3000-5000"))
+        self.set_vehicle.set(p.get("vehicle", "无车"))
+        self.set_purchase_freq.set(p.get("purchase_freq", "中"))
+        self.set_region.set(p.get("region", "广东"))
+        self.set_marriage.set(p.get("marriage", "已婚有娃"))
+        self.set_customer_type.set(p.get("customer_type", "潜客"))
+        self.set_typing_style.set(p.get("typing_style", "中"))
+        rt = float(p.get("response_tendency", 0.45))
+        self.set_response_tendency.set(int(rt * 100))
+        self.response_tendency_label.config(text=f"{rt:.2f}")
+
+    def _refresh_personas_after_edit(self):
+        from llm_engine import load_personas
+        global PERSONAS
+        PERSONAS = load_personas()
+        self._refresh_account_personas()
+
+    def _preview_system_prompt(self):
+        name = self.persona_combo.get()
+        if not name:
+            messagebox.showwarning("提示", "请先选择角色")
+            return
+        persona = {
+            "name": name,
+            "crowd": self.set_crowd.get(),
+            "device": self.set_device.get(),
+            "vehicle": self.set_vehicle.get(),
+            "purchase_freq": self.set_purchase_freq.get(),
+            "region": self.set_region.get(),
+            "marriage": self.set_marriage.get(),
+            "customer_type": self.set_customer_type.get(),
+            "tone": "",
+            "typing_style": self.set_typing_style.get(),
+            "response_tendency": int(self.set_response_tendency.get()) / 100,
+        }
+        try:
+            from llm_engine import compose_system_prompt
+            sp = compose_system_prompt(persona)
+        except Exception as e:
+            sp = f"❌ 生成失败: {e}"
+        win = tk.Toplevel(self.root)
+        win.title(f"系统提示词预览 - {name}")
+        win.geometry("640x520")
+        txt = scrolledtext.ScrolledText(win, wrap=tk.WORD, font=("Microsoft YaHei", 9))
+        txt.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        txt.insert(tk.END, sp)
+        txt.config(state=tk.DISABLED)
+
+    # ── 提示词子标签：保存/加载/删除 ──
+
+    def _prompt_md_path(self) -> Path:
+        name = self.persona_combo.get()
+        if not name:
+            return None
+        return PERSONAS_DIR / f"{name}.md"
+
+    def _load_prompt_md(self):
+        path = self._prompt_md_path()
+        if path is None or not hasattr(self, "prompt_text"):
+            return
+        self.prompt_text.delete("1.0", tk.END)
+        if path and path.exists():
+            try:
+                self.prompt_text.insert(tk.END, path.read_text(encoding="utf-8"))
+            except Exception as e:
+                self.log(f"⚠ 读取 .md 失败: {e}")
+
+    def _save_prompt_md(self):
+        path = self._prompt_md_path()
+        if path is None:
+            messagebox.showwarning("提示", "请先选择角色")
+            return
+        content = self.prompt_text.get("1.0", tk.END).strip()
+        try:
+            path.write_text(content, encoding="utf-8")
+            self.log(f"📄 已保存提示词: {path.name}")
+        except Exception as e:
+            messagebox.showerror("保存失败", str(e))
+
+    def _delete_prompt_md(self):
+        path = self._prompt_md_path()
+        if path is None or not path.exists():
+            return
+        if not messagebox.askyesno("确认", f"删除 {path.name}？\n将回退到自动模板。"):
+            return
+        try:
+            path.unlink()
+            self.prompt_text.delete("1.0", tk.END)
+            self.log(f"🗑 已删除 {path.name}")
+        except Exception as e:
+            messagebox.showerror("删除失败", str(e))
 
     def _load_messages_from_code(self):
-        """从 PERSONAS 加载默认角色到 rules.json 和 UI"""
+        """从 PERSONAS 加载默认角色到 rules.json 和 UI（含子标签）"""
         data = {}
         for p in PERSONAS:
             data[p["name"]] = {
@@ -560,6 +1001,11 @@ class App:
         self._refresh_persona_combo()
         self._refresh_account_personas()
         self._refresh_msg_list()
+        # M1: 同步加载子标签
+        if hasattr(self, "set_crowd"):
+            self._load_settings()
+        if hasattr(self, "prompt_text"):
+            self._load_prompt_md()
 
     def _refresh_msg_list(self):
         """刷新当前选中角色的弹幕列表"""
@@ -596,6 +1042,11 @@ class App:
 
     def _on_persona_select(self, event=None):
         self._refresh_msg_list()
+        # M1: 切换角色时同步刷新子标签
+        if hasattr(self, "set_crowd"):
+            self._load_settings()
+        if hasattr(self, "prompt_text"):
+            self._load_prompt_md()
 
     def _on_msg_select(self, event=None):
         sel = self.msg_listbox.curselection()
@@ -889,14 +1340,15 @@ class App:
         messagebox.showinfo("导出完成", f"已导出 {len(msgs)} 条弹幕到\n{path}")
 
     def _refresh_account_personas(self):
-        """重新加载 PERSONAS（从 rules.json），刷新角色列表"""
+        """重新加载 PERSONAS（从 rules.json），刷新角色下拉"""
         from llm_engine import load_personas
         global PERSONAS
         PERSONAS = load_personas()
-        # 重建角色多选列表
-        self.role_list.delete(0, tk.END)
-        for name in get_persona_names():
-            self.role_list.insert(tk.END, name)
+        # 重建单选角色下拉
+        names = get_persona_names()
+        self.persona_combo["values"] = names
+        if names and not self.persona_combo.get():
+            self.persona_combo.set(names[0])
         self._load_config_to_form()
 
     # ════════════════════════════════════════
