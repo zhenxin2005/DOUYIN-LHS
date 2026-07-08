@@ -12,23 +12,39 @@ import jieba
 DEFAULT_TYPING_STYLE = "normal"
 
 # 词块间短停顿区间（毫秒），按 typing_style 选
+# （A 任务：拉宽节奏，避免黏贴闪电感）
 INTERVAL_BY_STYLE_MS = {
-    "slow":   (120, 280),
-    "normal": (50, 200),    # PLAN.md 默认值
-    "fast":   (20, 80),
+    "slow":   (180, 400),
+    "normal": (80, 280),
+    "fast":   (40, 130),
 }
 
 # 长停顿区间（秒）
-LONG_PAUSE_RANGE_S = (0.5, 1.5)
+LONG_PAUSE_RANGE_S = (0.6, 1.8)
 
 # 标点后长停顿概率
-LONG_PAUSE_PROB = 0.30
+LONG_PAUSE_PROB = 0.45
 
 # 触发长停顿的标点（中英常见）
 LONG_PAUSE_PUNCTS = frozenset("，。？！（）~…\n. ,?!")
 
-# 同一词块内字符间隔（毫秒）—— 不为 0，避免字间过紧被识别
-INTRA_TOKEN_DELAY_MS = 5
+# 同一词块内字符间隔（毫秒）—— 不为 0；带轻度 jitter，避免每字等距被打回机器
+INTRA_TOKEN_DELAY_MS = (10, 25)  # 区间随机
+
+
+def _intra_token_delay_s() -> float:
+    """token 内单字延迟（秒）。"""
+    lo, hi = INTRA_TOKEN_DELAY_MS
+    return random.randint(lo, hi) / 1000.0
+
+
+# 中文 → 英文 typing_style 映射（persona 里写的是「慢/中/快」）
+_ZH_TO_STYLE = {"慢": "slow", "中": "normal", "快": "fast"}
+
+
+def map_zh_style(zh: str) -> str:
+    """把 persona.typing_style（慢/中/快）映射到 humanized_input 的档位。"""
+    return _ZH_TO_STYLE.get(zh or "", DEFAULT_TYPING_STYLE)
 
 
 def chunk_by_words(text: str) -> list[str]:
@@ -76,13 +92,17 @@ def type_humanized(input_el, text: str, typing_style: str = DEFAULT_TYPING_STYLE
     """
     if not text:
         return
-    intra_s = INTRA_TOKEN_DELAY_MS / 1000.0
-    for token in chunk_by_words(text):
+    tokens = chunk_by_words(text)
+    n_tokens = len(tokens)
+    for i, token in enumerate(tokens):
         for ch in token:
             _inject_char(input_el, ch)
-            time.sleep(intra_s)
+            time.sleep(_intra_token_delay_s())
         # token 间短停
         time.sleep(get_interval_ms(typing_style) / 1000.0)
         # 标点后长停
         if token in LONG_PAUSE_PUNCTS and random.random() < LONG_PAUSE_PROB:
             time.sleep(get_long_pause_s())
+        # 动态系数：剩余 token 越多，单 token 停顿越短（模拟越打越顺手）
+        if i < n_tokens - 1:
+            time.sleep(get_interval_ms(typing_style) / 1000.0 * 0.3)

@@ -47,7 +47,7 @@ except ImportError:
         msgs = persona.get("messages") or []
         return {"respond": True, "content": random.choice(msgs) if msgs else "", "emotion": "neutral"}
 
-from humanized_input import type_humanized, DEFAULT_TYPING_STYLE  # M3 拟人输入
+from humanized_input import type_humanized, DEFAULT_TYPING_STYLE, map_zh_style  # M3 拟人输入
 
 
 # ══════════════════════════════════════════════
@@ -118,6 +118,8 @@ def run(config: dict, headless: bool = False):
         "llm_temperature": float(config.get("llm_temperature", 0.8)),
         "llm_mode":      config.get("llm_mode", "pick"),
         "llm_timeout":   float(config.get("llm_timeout", 8)),
+        # B 任务：弹幕长度控制（dict，缺失时 llm_engine 用默认）
+        "length_control": config.get("length_control"),
     }
     if llm_enabled:
         if not llm_config["llm_api_key"]:
@@ -304,7 +306,9 @@ def run(config: dict, headless: bool = False):
                     el.evaluate("el2 => { el2.textContent = ''; el2.innerHTML = ''; el2.focus(); }")
                     time.sleep(0.1)
                     # M3 拟人输入：jieba 分词 + 词间随机 + 标点长停
-                    type_humanized(el, reply, typing_style=DEFAULT_TYPING_STYLE)
+                    # A 任务：从 persona 取 typing_style，不再写死
+                    style_zh = current_persona.get("typing_style", "中")
+                    type_humanized(el, reply, typing_style=map_zh_style(style_zh))
                     time.sleep(0.3)
                     page.evaluate("""() => {
                         ['keydown','keypress','keyup'].forEach(type => {

@@ -269,6 +269,19 @@ class App:
                 pass
             self.llm_enabled_var.set(bool(cfg.get("llm_enabled", False)))
 
+            # B 任务：弹幕长度控制
+            lc = cfg.get("length_control") or {}
+            try: self.len_min.set(int(lc.get("min_chars", 1)))
+            except Exception: pass
+            try: self.len_max_common.set(int(lc.get("max_common", 5)))
+            except Exception: pass
+            try: self.len_max_occ.set(int(lc.get("max_occasional", 9)))
+            except Exception: pass
+            try: self.len_max_rare.set(int(lc.get("max_rare", 11)))
+            except Exception: pass
+            try: self.len_hard_cap.set(int(lc.get("hard_cap", 12)))
+            except Exception: pass
+
     def _save_config_from_form(self):
         """从表单保存到 config.json"""
         selected_persona = self.persona_combo.get().strip()
@@ -300,6 +313,18 @@ class App:
             cfg["llm_temperature"] = round(int(self.llm_temperature.get()) / 100, 2)
             cfg["llm_mode"] = self.llm_mode.get() or "pick"
             cfg["llm_timeout"] = timeout_val
+
+            # B 任务：弹幕长度控制
+            try:
+                cfg["length_control"] = {
+                    "min_chars":      int(self.len_min.get()),
+                    "max_common":     int(self.len_max_common.get()),
+                    "max_occasional": int(self.len_max_occ.get()),
+                    "max_rare":       int(self.len_max_rare.get()),
+                    "hard_cap":       int(self.len_hard_cap.get()),
+                }
+            except (ValueError, tk.TclError):
+                pass  # 用户半填数字不存，避免写坏 config.json
 
         save_config(cfg)
 
@@ -409,6 +434,37 @@ class App:
         self.llm_test_status = tk.Label(test_row, text="（未测试）",
                                          fg="gray", font=("Microsoft YaHei", 9))
         self.llm_test_status.pack(side=tk.LEFT, padx=12)
+
+        # ── 弹幕长度控制（B 任务：4 个上限 + 硬截断） ──
+        lenfrm = ttk.LabelFrame(frame, text="弹幕长度（字数）", padding=8)
+        lenfrm.pack(fill=tk.X, pady=4)
+
+        lr1 = ttk.Frame(lenfrm); lr1.pack(fill=tk.X, pady=2)
+        ttk.Label(lr1, text="最短：", width=10).pack(side=tk.LEFT)
+        self.len_min = ttk.Spinbox(lr1, from_=1, to=20, width=4)
+        self.len_min.set(1); self.len_min.pack(side=tk.LEFT, padx=4)
+        ttk.Label(lr1, text="·70% 上限：", width=10).pack(side=tk.LEFT, padx=(8, 0))
+        self.len_max_common = ttk.Spinbox(lr1, from_=1, to=20, width=4)
+        self.len_max_common.set(5); self.len_max_common.pack(side=tk.LEFT, padx=4)
+        self.len_max_common.bind("<FocusOut>", lambda e: self._save_config_from_form())
+
+        lr2 = ttk.Frame(lenfrm); lr2.pack(fill=tk.X, pady=2)
+        ttk.Label(lr2, text="·25% 上限：", width=10).pack(side=tk.LEFT)
+        self.len_max_occ = ttk.Spinbox(lr2, from_=1, to=20, width=4)
+        self.len_max_occ.set(9); self.len_max_occ.pack(side=tk.LEFT, padx=4)
+        self.len_max_occ.bind("<FocusOut>", lambda e: self._save_config_from_form())
+        ttk.Label(lr2, text="·5% 上限：", width=10).pack(side=tk.LEFT, padx=(8, 0))
+        self.len_max_rare = ttk.Spinbox(lr2, from_=1, to=20, width=4)
+        self.len_max_rare.set(11); self.len_max_rare.pack(side=tk.LEFT, padx=4)
+        self.len_max_rare.bind("<FocusOut>", lambda e: self._save_config_from_form())
+
+        lr3 = ttk.Frame(lenfrm); lr3.pack(fill=tk.X, pady=2)
+        ttk.Label(lr3, text="硬截断：", width=10).pack(side=tk.LEFT)
+        self.len_hard_cap = ttk.Spinbox(lr3, from_=1, to=30, width=4)
+        self.len_hard_cap.set(12); self.len_hard_cap.pack(side=tk.LEFT, padx=4)
+        self.len_hard_cap.bind("<FocusOut>", lambda e: self._save_config_from_form())
+        ttk.Label(lr3, text="（超过则强制截断 + 日志提示）",
+                  foreground="gray", font=("Microsoft YaHei", 8)).pack(side=tk.LEFT, padx=8)
 
         # ── 提示 ──
         ttk.Label(frame, text="💡 提示：测试连接会发起一次真实 LLM 调用，"
