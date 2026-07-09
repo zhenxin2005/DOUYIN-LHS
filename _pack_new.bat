@@ -10,13 +10,16 @@ rmdir /s /q output 2>nul
 rmdir /s /q build 2>nul
 
 :: PyInstaller 打包
+:: 注意：config.json（真实 API Key/账号名）不打包，
+::       config.template.json（脱敏占位）会被 ui.py 复制为 config.json
 python -m PyInstaller ^
     --noconfirm ^
     --onedir ^
     --windowed ^
     --name "Launcher" ^
-    --add-data "config.json;." ^
+    --add-data "config.template.json;." ^
     --add-data "rules.json;." ^
+    --add-data "personas;personas" ^
     --hidden-import "playwright" ^
     --hidden-import "playwright.sync_api" ^
     --hidden-import "llm_engine" ^

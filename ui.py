@@ -51,13 +51,19 @@ TONE_OPTIONS = ["直白务实", "朴实信祈", "得体理性", "玩梗好奇", 
 OLD_SCHEMA_FIELDS = ("tone", "trait", "style")
 
 # 首次运行：从 bundle 复制默认配置到运行目录
+# 注意：打包版的 config.json 是占位模板(config.template.json),首次启动会复制为 config.json,
+#       UI 检测到空 KEY/空账号时弹提示让用户填写,避免隐私泄露(LLM Key / 账号名 / 房间号)
 if getattr(sys, 'frozen', False):
     import shutil as _shutil
     _bundle = Path(sys._MEIPASS)
-    for _f in ["config.json", "rules.json"]:
-        _dst = APP_DIR / _f
+    _copy_map = {
+        "config.json": "config.template.json",  # 占位模板 → config.json
+        "rules.json":  "rules.json",
+    }
+    for _dst_name, _src_name in _copy_map.items():
+        _dst = APP_DIR / _dst_name
         if not _dst.exists():
-            _src = _bundle / _f
+            _src = _bundle / _src_name
             if _src.exists():
                 _shutil.copy2(_src, _dst)
 
@@ -101,6 +107,9 @@ class App:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._build_ui()
         self._load_config_to_form()
+        # 打包版首次启动占位提示：UI 显示完再弹窗，不阻塞启动
+        if getattr(sys, 'frozen', False):
+            self.root.after(200, self._check_placeholder_config)
 
     def _build_ui(self):
         header = tk.Frame(self.root, bg="#8B0000", height=48)
@@ -281,6 +290,24 @@ class App:
             except Exception: pass
             try: self.len_hard_cap.set(int(lc.get("hard_cap", 12)))
             except Exception: pass
+
+    def _check_placeholder_config(self):
+        """打包版首次启动检测：account/llm_api_key/room_url 任一为空就提醒"""
+        cfg = load_config()
+        missing = []
+        if not cfg.get("account", "").strip():
+            missing.append("账号名 (account)")
+        if not cfg.get("room_url", "").strip():
+            missing.append("直播间 URL (room_url)")
+        if cfg.get("llm_enabled") and not cfg.get("llm_api_key", "").strip():
+            missing.append("LLM API Key (已开启 LLM 模式)")
+        if missing:
+            messagebox.showwarning(
+                "首次启动 — 请补全配置",
+                "检测到以下必填项为空：\n\n  • " + "\n  • ".join(missing) +
+                "\n\n请在「🎥 直播间互动」和「🤖 LLM 配置」两个 Tab 填好后保存。\n"
+                "Tab 字段失焦会自动写入运行目录的 config.json。"
+            )
 
     def _save_config_from_form(self):
         """从表单保存到 config.json"""

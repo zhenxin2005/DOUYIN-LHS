@@ -1,0 +1,23 @@
+{
+  "room_url": "",
+  "personas": [
+    "桑蚕丝连衣裙"
+  ],
+  "send_interval": 60,
+  "bullet_strategy": "循环",
+  "account": "",
+  "llm_enabled": false,
+  "llm_api_key": "",
+  "llm_base_url": "https://api.deepseek.com",
+  "llm_model": "deepseek-chat",
+  "llm_temperature": 0.7,
+  "llm_mode": "pick",
+  "llm_timeout": 8.0,
+  "length_control": {
+    "min_chars": 1,
+    "max_common": 5,
+    "max_occasional": 9,
+    "max_rare": 11,
+    "hard_cap": 12
+  }
+}
