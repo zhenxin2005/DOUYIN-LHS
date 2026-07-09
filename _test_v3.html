@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>析命师互动控制台 V3 测试清单</title>
+  <style>
+    :root {
+      --bg: #fafafa;
+      --fg: #222;
+      --muted: #666;
+      --accent: #2563eb;
+      --success: #16a34a;
+      --warn: #ea580c;
+      --danger: #dc2626;
+      --border: #e5e7eb;
+      --card: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", "PingFang SC", sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.6;
+      margin: 0;
+      padding: 24px;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    header {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 24px;
+    }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    h2 { margin: 24px 0 12px; font-size: 18px; border-left: 4px solid var(--accent); padding-left: 10px; }
+    .meta { color: var(--muted); font-size: 14px; }
+    .meta input { border: none; border-bottom: 1px dashed var(--border); background: transparent; padding: 0 4px; min-width: 100px; font-family: inherit; }
+    section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 24px;
+      margin-bottom: 16px;
+    }
+    ul.checks { list-style: none; padding: 0; margin: 0; }
+    ul.checks li {
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    ul.checks li:last-child { border-bottom: none; }
+    ul.checks label {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    ul.checks input[type="checkbox"] {
+      width: 18px; height: 18px;
+      margin-top: 2px;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+    .expect { color: var(--muted); font-size: 13px; padding-left: 28px; }
+    .step { color: var(--muted); font-size: 13px; padding-left: 28px; }
+    .step strong { color: var(--fg); }
+    .result-input {
+      margin-left: 28px;
+      margin-top: 6px;
+      width: calc(100% - 28px);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 6px 10px;
+      font-family: inherit;
+      font-size: 13px;
+    }
+    /* 状态颜色 */
+    section.fail { border-left: 4px solid var(--danger); }
+    section.pass { border-left: 4px solid var(--success); }
+    section.partial { border-left: 4px solid var(--warn); }
+    .stats {
+      display: flex;
+      gap: 16px;
+      margin: 16px 0;
+      padding: 12px 20px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .stats span { font-size: 14px; color: var(--muted); }
+    .stats b { color: var(--fg); font-size: 18px; }
+    .stats .pass b { color: var(--success); }
+    .stats .fail b { color: var(--danger); }
+    table.issues { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.issues th, table.issues td {
+      border: 1px solid var(--border);
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    table.issues th { background: #f5f5f5; font-weight: 600; }
+    table.issues input, table.issues textarea {
+      width: 100%;
+      border: none;
+      font-family: inherit;
+      font-size: 13px;
+      background: transparent;
+      resize: vertical;
+    }
+    table.issues textarea { min-height: 40px; }
+    .add-row { margin-top: 8px; }
+    button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    button:hover { opacity: 0.9; }
+    button.secondary { background: var(--muted); }
+    footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 32px; }
+    @media print {
+      body { background: white; padding: 0; }
+      section, header { box-shadow: none; border: 1px solid #ccc; }
+      button { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>📋 析命师互动控制台 V3 测试清单</h1>
+  <div class="meta">
+    版本 v3.0（commit <code>5530fa1</code> + <code>27036fa1</code> + <code>b8ead87</code>） ·
+    日期 <input type="text" id="test-date" placeholder="2026-07-08"> ·
+    测试人 <input type="text" id="tester" placeholder="你的名字">
+  </div>
+</header>
+
+<div class="stats">
+  <span class="pass">✅ 通过 <b id="pass-count">0</b></span>
+  <span class="fail">❌ 失败 <b id="fail-count">0</b></span>
+  <span>⬜ 未测 <b id="untested-count">0</b></span>
+  <span>📊 总计 <b id="total-count">0</b></span>
+  <button class="secondary" onclick="resetAll()">重置全部</button>
+  <button onclick="window.print()">打印 / 导出 PDF</button>
+</div>
+
+<!-- ───── 测试前 ───── -->
+<section>
+  <h2>🛠 测试前 checklist</h2>
+  <ul class="checks">
+    <li data-group="pre">
+      <label><input type="checkbox"> Python 3.11+ 已装,依赖已 <code>pip install -r requirements.txt</code></label>
+    </li>
+    <li data-group="pre">
+      <label><input type="checkbox"> Playwright Chromium 已装 <code>playwright install chromium</code></label>
+    </li>
+    <li data-group="pre">
+      <label><input type="checkbox"> <code>config.json</code> 已配好真实 LLM key（如要测 LLM 路径）</label>
+    </li>
+    <li data-group="pre">
+      <label><input type="checkbox"> 已选定测试直播间（自己开播或允许测试的直播间）</label>
+    </li>
+  </ul>
+</section>
+
+<!-- ───── A. 启动与登录 ───── -->
+<section data-group="A">
+  <h2>🅰️ 启动与登录</h2>
+  <ul class="checks">
+    <li>
+      <label><input type="checkbox"> A1. 双击 <code>launcher.py</code>（或 <code>python launcher.py</code>），GUI 启动</label>
+      <div class="expect">期望：4 个 Tab（🎥直播间互动 / 💬角色管理 / 🤖LLM配置 / 📝弹幕采集）都可见</div>
+    </li>
+    <li>
+      <label><input type="checkbox"> A2. Tab 1 填直播间地址，点「扫码登录」</label>
+      <div class="expect">期望：浏览器打开抖音登录页，扫码成功后自动关闭</div>
+    </li>
+    <li>
+      <label><input type="checkbox"> A3. 重启 launcher，登录态仍在</label>
+      <div class="expect">期望：<code>browser_data/</code> 持久化 sessionid，不需要重新扫码</div>
+    </li>
+  </ul>
+</section>
+
+<!-- ───── B. V2 静态模式（LLM 关闭） ───── -->
+<section data-group="B">
+  <h2>🅱️ V2 静态模式（LLM 关闭）</h2>
+  <ul class="checks">
+    <li>
+      <label><input type="checkbox"> B1. Tab 3 取消勾选「启用 LLM 决策」</label>
+      <div class="step"><strong>步骤：</strong>切到 Tab 3 → 取消顶部 checkbox → 切回 Tab 1</div>
+    </li>
+    <li>
+      <label><input type="checkbox"> B2. Tab 1 点「启动」，观察日志首行</label>
+      <div class="expect">期望：<code>💤 LLM 未启用（v2 静态模式）—— GUI Tab 3 开启后可激活</code></div>
+    </li>
+    <li>
+      <label><input type="checkbox"> B3. 弹幕按 ~40s 间隔稳定发送</label>
+      <div class="expect">期望：每轮 ~40s ± 抖动，内容来自 <code>rules.json</code> 的 messages 池</div>
+    </li>
+    <li>
+      <label><input type="checkbox"> B4. 「弹幕策略」下拉切循环 / 随机，行为不同</label>
+      <div class="expect">期望：循环按顺序、随机 shuffle 后顺序消费</div>
+    </li>
+  </ul>
+</section>
+
+<!-- ───── C. LLM 决策模式 ───── -->
+<section data-group="C">
+  <h2>🅲 LLM 决策模式（核心）</h2>
+  <ul class="checks">
+    <li>
+      <label><input type="checkbox"> C1. Tab 3 填真 key / base_url / model，勾选「启用 LLM 决策」</label>
+    </li>
+    <li>
+      <label><input type="checkbox"> C2. 点「🔌 测试连接」，返回成功</label>
+      <div class="expect">期望：状态显示「✅ 成功」或类似，耗时 1~3s</div>
+    </li>
+    <li>
+      <label><input type="checkbox"> C3. Tab 1 启动，日志显示「🤖 LLM 已启用: ...」</label>
+      <div class="expect">期望：完整显示 model 名 + base_url + key 前后 4 位掩码</div>
+    </li>
+    <li>
+      <label><input type="checkbox"> C4. 日志出现 <code>[LLM] ✓ respond=True content='...'</code></label>
+      <div class="expect">期望：每次 LLM 调用都有 ✓ 标记</div>
+    </li>
+    <li>
+      <label><input type="checkbox"> C5. 弹幕内容是「池外」（LLM 自由发挥）</label>
+      <div class="expect">期望：内容不在 messages 池里，如「这款性价比怎么样」「这个尺码偏大还是偏小啊」</div>
+    </li>
+    <li>
+      <label><input type="checkbox"> C6. 偶尔静默不发（response_tendency 机制）</label>
+      <div class="expect">期望：部分轮次不发弹幕（掷骰子没过 0.45），正常</div>
+    </li>
+  </ul>
+</section>
+
+<!-- ───── D. 拟人节奏输入（M3） ───── -->
+<section data-group="D">
+  <h2>🅳 拟人节奏输入（M3）</h2>
+  <ul class="checks">
+    <li>
+      <label><input type="checkbox"> D1. 弹幕输入肉眼可见分词停顿</label>
+      <div class="expect">期望：词与词之间有 50~200ms 随机停顿，不像机打</div>
+    </li>
+    <li>
+      <label><input type="checkbox"> D2. 标点后偶尔有长停顿（0.5~1.5s）</label>
+      <div class="expect">期望：句号 / 问号后 30% 概率出现明显停顿</div>
+    </li>
+    <li>
+      <label><input type="checkbox"> D3. 13 字句大约 ~2s 输入完成</label>
+      <div class="expect">期望：vs v2 机打 ~130ms，现在是 16 倍慢</div>
+    </li>
+  </ul>
+</section>
+
+<!-- ───── E. 角色与人格 ───── -->
+<section data-group="E">
+  <h2>🅴 角色与人格（M1）</h2>
+  <ul class="checks">
+    <li>
+      <label><input type="checkbox"> E1. Tab 2 ⚙ 设定 选不同角色，13 字段正确加载</label>
+      <div class="expect">期望：crowd / device / vehicle / region / marriage 等字段自动填</div>
+    </li>
+    <li>
+      <label><input type="checkbox"> E2. 回应率滑块调到 1.0，弹幕更密集</label>
+      <div class="expect">期望：静默比例降低，每轮都发</div>
+    </li>
+    <li>
+      <label><input type="checkbox"> E3. 切角色后，LLM 输出风格跟着变</label>
+      <div class="expect">期望：不同人群画像 → 不同语气（如都市中产 vs Gen Z）</div>
+    </li>
+    <li>
+      <label><input type="checkbox"> E4. Tab 2 💬 弹幕 编辑 messages，加一条新弹幕</label>
+      <div class="expect">期望：保存后规则 JSON 变化，pick 模式能选到新弹幕</div>
+    </li>
+    <li>
+      <label><input type="checkbox"> E5. Tab 2 📄 提示词 编辑 personas/<角色名>.md，重启后生效</label>
+      <div class="expect">期望：.md 内容追加到 LLM system prompt 末尾，影响 LLM 输出风格</div>
+    </li>
+  </ul>
+</section>
+
+<!-- ───── F. Provider 切换 ───── -->
+<section data-group="F">
+  <h2>🅵 Provider 切换</h2>
+  <ul class="checks">
+    <li>
+      <label><input type="checkbox"> F1. Tab 3 切 Provider 下拉（DeepSeek / 豆包 / KIMI / MINIMAX / MIMO / OpenAI / 自定义）</label>
+      <div class="expect">⚠️ 注意：当前 Provider Combobox 不会自动填 base_url，需要手动改 base_url + model</div>
+    </li>
+    <li>
+      <label><input type="checkbox"> F2. 改 base_url 到其他厂商，能正常调用</label>
+      <div class="expect">期望：测试连接通过，[LLM] ✓ 正常输出</div>
+    </li>
+  </ul>
+</section>
+
+<!-- ───── G. 降级兜底（核心特性） ───── -->
+<section data-group="G">
+  <h2>🅶 降级兜底（核心特性）</h2>
+  <ul class="checks">
+    <li>
+      <label><input type="checkbox"> G1. 故意把 model 名改错（如 <code>non-exist-model</code>）</label>
+      <div class="expect">期望：<code>[LLM] ✗ 调用失败: NotFoundError...</code> → fallback → 弹幕继续发</div>
+    </li>
+    <li>
+      <label><input type="checkbox"> G2. 清空 API key 启动</label>
+      <div class="expect">期望：日志显示 <code>⚠️ llm_enabled=true 但 llm_api_key 为空，自动降级到 v2 路径</code></div>
+    </li>
+    <li>
+      <label><input type="checkbox"> G3. 拔网线 / 关 WiFi 后启动</label>
+      <div class="expect">期望：LLM 调用超时 → fallback → 不罢工</div>
+    </li>
+  </ul>
+</section>
+
+<!-- ───── H. 停止 / 异常恢复 ───── -->
+<section data-group="H">
+  <h2>🅷 停止与异常恢复</h2>
+  <ul class="checks">
+    <li>
+      <label><input type="checkbox"> H1. GUI 点「停止」，子进程收到 .stop_flag 优雅退出</label>
+      <div class="expect">期望：日志显示 <code>⏹ 收到停止信号 → 🛑 已停止</code></div>
+    </li>
+    <li>
+      <label><input type="checkbox"> H2. 子进程 Ctrl+C 中断</label>
+      <div class="expect">期望：<code>⏹ 用户停止 → 🛑 已停止</code>，浏览器关闭</div>
+    </li>
+    <li>
+      <label><input type="checkbox"> H3. 直播间未开播，输入框找不到</label>
+      <div class="expect">期望：截图留证 <code>screenshots/debug_no_input.png</code>，继续重试 / 不罢工</div>
+    </li>
+  </ul>
+</section>
+
+<!-- ───── I. 弹幕采集 ───── -->
+<section data-group="I">
+  <h2>🅸 弹幕采集（record_content.py）</h2>
+  <ul class="checks">
+    <li>
+      <label><input type="checkbox"> I1. <code>python record_content.py https://live.douyin.com/xxx 10</code> 跑 10 分钟</label>
+      <div class="expect">期望：生成弹幕数据文件，供未来 M2 知识库使用</div>
+    </li>
+  </ul>
+</section>
+
+<!-- ───── 问题记录 ───── -->
+<section>
+  <h2>🐛 问题 / 建议记录</h2>
+  <table class="issues" id="issues-table">
+    <thead>
+      <tr>
+        <th style="width: 60px;">#</th>
+        <th style="width: 120px;">场景</th>
+        <th>问题描述</th>
+        <th>严重度</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td><input placeholder="如 C5"></td>
+        <td><textarea placeholder="描述问题、贴日志、复现步骤..."></textarea></td>
+        <td><select><option>低</option><option>中</option><option>高</option></select></td>
+      </tr>
+    </tbody>
+  </table>
+  <button class="add-row" onclick="addRow()">+ 添加一行</button>
+</section>
+
+<!-- ───── 总结 ───── -->
+<section>
+  <h2>📝 总结</h2>
+  <textarea style="width:100%; min-height:120px; padding:8px; border:1px solid var(--border); border-radius:4px; font-family:inherit; font-size:14px;" placeholder="整体评价、主要 bug、改进建议、是否可打包给用户测试..."></textarea>
+</section>
+
+<footer>
+  析命师互动控制台 V3 · 测试清单 · 双击打开浏览器交互 · 数据存 localStorage
+</footer>
+
+<script>
+  // ── 统计 ──
+  const all = document.querySelectorAll('input[type="checkbox"][data-default-ck], ul.checks input[type="checkbox"]');
+  function updateStats() {
+    const checks = document.querySelectorAll('ul.checks input[type="checkbox"]');
+    let pass = 0, fail = 0, untested = 0;
+    checks.forEach(c => {
+      if (c.checked) {
+        if (c.dataset.fail === 'true') fail++; else pass++;
+      } else {
+        untested++;
+      }
+    });
+    document.getElementById('pass-count').textContent = pass;
+    document.getElementById('fail-count').textContent = fail;
+    document.getElementById('untested-count').textContent = untested;
+    document.getElementById('total-count').textContent = checks.length;
+  }
+
+  // ── 失败标记 ──
+  document.querySelectorAll('ul.checks li').forEach(li => {
+    const cb = li.querySelector('input[type="checkbox"]');
+    if (!cb) return;
+    cb.addEventListener('change', () => {
+      const section = li.closest('section');
+      if (cb.checked) {
+        // 弹窗问：通过还是失败？
+        const r = confirm('点击确定 = ✅ 通过\n点击取消 = ❌ 失败（会标记该项）');
+        if (!r) {
+          cb.dataset.fail = 'true';
+          li.style.background = '#fef2f2';
+          if (section) section.classList.remove('pass', 'partial');
+          if (section) section.classList.add('fail');
+        } else {
+          cb.dataset.fail = 'false';
+          li.style.background = '#f0fdf4';
+          if (section) {
+            section.classList.remove('fail');
+            // 检查 section 全部是否都通过
+            const allCbs = section.querySelectorAll('ul.checks input[type="checkbox"]');
+            const allChecked = Array.from(allCbs).every(c => c.checked && c.dataset.fail !== 'true');
+            if (allChecked) section.classList.add('pass');
+          }
+        }
+      } else {
+        cb.dataset.fail = '';
+        li.style.background = '';
+        if (section) section.classList.remove('pass', 'fail', 'partial');
+      }
+      updateStats();
+      saveState();
+    });
+  });
+
+  // ── localStorage 持久化 ──
+  function saveState() {
+    const state = {
+      date: document.getElementById('test-date').value,
+      tester: document.getElementById('tester').value,
+      checks: [],
+      summary: document.querySelector('section:last-of-type textarea')?.value || '',
+    };
+    document.querySelectorAll('ul.checks input[type="checkbox"]').forEach((cb, i) => {
+      state.checks.push({
+        checked: cb.checked,
+        fail: cb.dataset.fail === 'true',
+        // li 里 .result-input 文本（如果加了）
+        note: cb.closest('li').querySelector('.result-input')?.value || '',
+      });
+    });
+    try { localStorage.setItem('v3_test_state', JSON.stringify(state)); } catch (e) {}
+  }
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem('v3_test_state');
+      if (!raw) return;
+      const state = JSON.parse(raw);
+      document.getElementById('test-date').value = state.date || '';
+      document.getElementById('tester').value = state.tester || '';
+      const summaryTa = document.querySelector('section:last-of-type textarea');
+      if (summaryTa && state.summary) summaryTa.value = state.summary;
+      document.querySelectorAll('ul.checks input[type="checkbox"]').forEach((cb, i) => {
+        const s = state.checks[i];
+        if (!s) return;
+        cb.checked = s.checked;
+        cb.dataset.fail = s.fail ? 'true' : (s.checked ? 'false' : '');
+        const li = cb.closest('li');
+        if (s.checked) li.style.background = s.fail ? '#fef2f2' : '#f0fdf4';
+        const noteInput = li.querySelector('.result-input');
+        if (noteInput && s.note) noteInput.value = s.note;
+      });
+      updateStats();
+    } catch (e) {}
+  }
+
+  // ── 自动保存 ──
+  document.querySelectorAll('input, textarea').forEach(el => {
+    el.addEventListener('input', saveState);
+    el.addEventListener('change', saveState);
+  });
+
+  // ── 添加问题行 ──
+  function addRow() {
+    const tbody = document.querySelector('#issues-table tbody');
+    const idx = tbody.querySelectorAll('tr').length + 1;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${idx}</td>
+      <td><input placeholder="如 C5"></td>
+      <td><textarea placeholder="描述问题..."></textarea></td>
+      <td><select><option>低</option><option>中</option><option>高</option></select></td>
+    `;
+    tbody.appendChild(tr);
+    tr.querySelectorAll('input, textarea, select').forEach(el => el.addEventListener('input', saveState));
+  }
+
+  // ── 重置 ──
+  function resetAll() {
+    if (!confirm('确认清空所有勾选和记录？')) return;
+    document.querySelectorAll('ul.checks input[type="checkbox"]').forEach(cb => {
+      cb.checked = false; cb.dataset.fail = '';
+      cb.closest('li').style.background = '';
+    });
+    document.querySelectorAll('section').forEach(s => s.classList.remove('pass', 'fail', 'partial'));
+    document.getElementById('test-date').value = '';
+    document.getElementById('tester').value = '';
+    document.querySelectorAll('textarea').forEach(t => t.value = '');
+    try { localStorage.removeItem('v3_test_state'); } catch (e) {}
+    updateStats();
+  }
+
+  // ── 初始化 ──
+  loadState();
+  updateStats();
+</script>
+
+</body>
+</html>
